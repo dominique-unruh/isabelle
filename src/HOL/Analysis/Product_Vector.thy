@@ -382,6 +382,56 @@ proof (rule metric_CauchyI)
   then show "\<exists>n0. \<forall>m\<ge>n0. \<forall>n\<ge>n0. dist (X m, Y m) (X n, Y n) < r" ..
 qed
 
+text \<open>Analogue to @{thm [source] uniformly_continuous_on_def} for two-argument functions.\<close>
+lemma uniformly_continuous_on_prod_metric:
+  fixes f :: \<open>('a::metric_space \<times> 'b::metric_space) \<Rightarrow> 'c::metric_space\<close>
+  shows \<open>uniformly_continuous_on (S\<times>T) f \<longleftrightarrow> (\<forall>e>0. \<exists>d>0. \<forall>x\<in>S. \<forall>y\<in>S. \<forall>x'\<in>T. \<forall>y'\<in>T. dist x y < d \<longrightarrow> dist x' y' < d \<longrightarrow> dist (f (x, x')) (f (y, y')) < e)\<close>
+proof (unfold uniformly_continuous_on_def, intro iffI impI allI)
+  fix e :: real 
+  assume \<open>e > 0\<close> and \<open>\<forall>e>0. \<exists>d>0. \<forall>x\<in>S. \<forall>y\<in>S. \<forall>x'\<in>T. \<forall>y'\<in>T. dist x y < d \<longrightarrow> dist x' y' < d \<longrightarrow> dist (f (x, x')) (f (y, y')) < e\<close>
+  then obtain d where \<open>d > 0\<close>
+    and d: \<open>\<forall>x\<in>S. \<forall>y\<in>S. \<forall>x'\<in>T. \<forall>y'\<in>T. dist x y < d \<longrightarrow> dist x' y' < d \<longrightarrow> dist (f (x, x')) (f (y, y')) < e\<close>
+    by auto
+  show \<open>\<exists>d>0. \<forall>x\<in>S\<times>T. \<forall>y\<in>S\<times>T. dist y x < d \<longrightarrow> dist (f y) (f x) < e\<close>
+    apply (rule exI[of _ d])
+    using \<open>d>0\<close> d[rule_format] apply auto
+    by (smt (verit, del_insts) dist_fst_le dist_snd_le fst_conv snd_conv)
+next
+  fix e :: real 
+  assume \<open>e > 0\<close> and \<open>\<forall>e>0. \<exists>d>0. \<forall>x\<in>S\<times>T. \<forall>x'\<in>S\<times>T. dist x' x < d \<longrightarrow> dist (f x') (f x) < e\<close>
+  then obtain d where \<open>d > 0\<close> and d: \<open>\<forall>x\<in>S\<times>T. \<forall>x'\<in>S\<times>T. dist x' x < d \<longrightarrow> dist (f x') (f x) < e\<close>
+    by auto
+  show \<open>\<exists>d>0. \<forall>x\<in>S. \<forall>y\<in>S. \<forall>x'\<in>T. \<forall>y'\<in>T. dist x y < d \<longrightarrow> dist x' y' < d \<longrightarrow> dist (f (x, x')) (f (y, y')) < e\<close>
+  proof (intro exI conjI impI ballI)
+    from \<open>d > 0\<close> show \<open>d / 2 > 0\<close> by auto
+    fix x y x' y'
+    assume [simp]: \<open>x \<in> S\<close> \<open>y \<in> S\<close> \<open>x' \<in> T\<close> \<open>y' \<in> T\<close>
+    assume \<open>dist x y < d / 2\<close> and \<open>dist x' y' < d / 2\<close>
+    then have \<open>dist (x, x') (y, y') < d\<close>
+      by (simp add: dist_Pair_Pair sqrt_sum_squares_half_less)
+    with d show \<open>dist (f (x, x')) (f (y, y')) < e\<close>
+      by auto
+  qed
+qed
+
+text \<open>Analogue to @{thm [source] isUCont_def} for two-argument functions.\<close>
+lemma isUCont_prod_metric:
+  fixes f :: \<open>('a::metric_space \<times> 'b::metric_space) \<Rightarrow> 'c::metric_space\<close>
+  shows \<open>isUCont f \<longleftrightarrow> (\<forall>e>0. \<exists>d>0. \<forall>x. \<forall>y. \<forall>x'. \<forall>y'. dist x y < d \<longrightarrow> dist x' y' < d \<longrightarrow> dist (f (x, x')) (f (y, y')) < e)\<close>
+  using uniformly_continuous_on_prod_metric[of UNIV UNIV]
+  by auto
+
+text \<open>This logically belong with the real vector spaces by we only have the necessary lemmas now.\<close>
+lemma isUCont_plus[simp]:
+  shows \<open>isUCont (\<lambda>(x::'a::real_normed_vector,y). x+y)\<close>
+proof (rule isUCont_prod_metric[THEN iffD2], intro allI impI, simp)
+  fix e :: real assume \<open>0 < e\<close>
+  show \<open>\<exists>d>0. \<forall>x y :: 'a. dist x y < d \<longrightarrow> (\<forall>x' y'. dist x' y' < d \<longrightarrow> dist (x + x') (y + y') < e)\<close>
+    apply (rule exI[of _ \<open>e/2\<close>])
+    using \<open>0 < e\<close> apply auto
+    by (smt (verit, ccfv_SIG) dist_add_cancel dist_add_cancel2 dist_commute dist_triangle_lt)
+qed
+
 subsection \<open>Product is a Complete Metric Space\<close>
 
 instance\<^marker>\<open>tag important\<close> prod :: (complete_space, complete_space) complete_space
