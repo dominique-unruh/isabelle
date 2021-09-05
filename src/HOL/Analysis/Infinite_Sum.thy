@@ -1,3 +1,10 @@
+(*
+  Title:    HOL/Analysis/Infinite_Sum.thy
+  Author:   Dominique Unruh, University of Tartu
+
+  A theory of sums over possible infinite sets.
+*)
+
 section \<open>Infinite sums\<close>
 \<^latex>\<open>\label{section:Infinite_Sum}\<close>
 
