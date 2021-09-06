@@ -1,5 +1,6 @@
 (*  Title:      HOL/Analysis/Product_Vector.thy
     Author:     Brian Huffman
+                Dominique Unruh, University of Tartu
 *)
 
 section \<open>Cartesian Products as Vector Spaces\<close>

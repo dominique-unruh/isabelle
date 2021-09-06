@@ -1781,6 +1781,7 @@ proof (safe intro!: INF_eq)
     by auto
 qed (auto intro!: exI[of _ "{y. dist x y < e}" for e] open_ball simp: dist_commute)
 
+(* Contributed by Dominique Unruh *)
 lemma tendsto_iff_uniformity:
     \<comment> \<open>More general analogus of \<open>tendsto_iff\<close> below. Applies to all uniform spaces, not just metric ones.\<close>
   fixes l :: \<open>'b :: uniform_space\<close>
@@ -2219,6 +2220,7 @@ lemma (in metric_space) totally_bounded_metric:
 
 setup \<open>Sign.add_const_constraint (\<^const_name>\<open>dist\<close>, SOME \<^typ>\<open>'a::dist \<Rightarrow> 'a \<Rightarrow> real\<close>)\<close>
 
+(* Contributed by Dominique Unruh *)
 lemma cauchy_filter_metric:
   fixes F :: "'a::{uniformity_dist,uniform_space} filter"
   shows "cauchy_filter F \<longleftrightarrow> (\<forall>e. e>0 \<longrightarrow> (\<exists>P. eventually P F \<and> (\<forall>x y. P x \<and> P y \<longrightarrow> dist x y < e)))"
@@ -2240,6 +2242,7 @@ next
     by (auto simp add: eventually_prod_same P_def)
 qed
 
+(* Contributed by Dominique Unruh *)
 lemma cauchy_filter_metric_filtermap:
   fixes f :: "'a \<Rightarrow> 'b::{uniformity_dist,uniform_space}"
   shows "cauchy_filter (filtermap f F) \<longleftrightarrow> (\<forall>e. e>0 \<longrightarrow> (\<exists>P. eventually P F \<and> (\<forall>x y. P x \<and> P y \<longrightarrow> dist (f x) (f y) < e)))"

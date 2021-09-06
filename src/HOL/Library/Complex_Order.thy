@@ -1,3 +1,10 @@
+(*
+  Title:    HOL/Library/Complex_Order.thy
+  Author:   Dominique Unruh, University of Tartu
+
+  Instantiation of complex numbers as an ordered set.
+*)
+
 theory Complex_Order
   imports Complex_Main
 begin

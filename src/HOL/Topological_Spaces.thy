@@ -788,6 +788,7 @@ lemma tendsto_bot [simp]: "(f \<longlongrightarrow> a) bot"
 lemma tendsto_eventually: "eventually (\<lambda>x. f x = l) net \<Longrightarrow> ((\<lambda>x. f x) \<longlongrightarrow> l) net"
   by (rule topological_tendstoI) (auto elim: eventually_mono)
 
+(* Contributed by Dominique Unruh *)
 lemma tendsto_principal_singleton[simp]:
   shows "(f \<longlongrightarrow> f x) (principal {x})"
   unfolding tendsto_def eventually_principal by simp
