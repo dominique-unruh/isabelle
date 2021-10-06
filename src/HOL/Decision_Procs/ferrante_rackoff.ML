@@ -33,12 +33,12 @@ fun ferrack_conv ctxt
              {isolate_conv = icv, whatis = wi, simpset = simpset}):entry) =
 let
  fun uset (vars as (x::vs)) p = case Thm.term_of p of
-   Const(\<^const_name>\<open>HOL.conj\<close>, _)$ _ $ _ =>
+   \<^Const_>\<open>HOL.conj for _ _\<close> =>
      let
        val ((b,l),r) = Thm.dest_comb p |>> Thm.dest_comb
        val (lS,lth) = uset vars l  val (rS, rth) = uset vars r
      in (lS@rS, Drule.binop_cong_rule b lth rth) end
- |  Const(\<^const_name>\<open>HOL.disj\<close>, _)$ _ $ _ =>
+ | \<^Const_>\<open>HOL.disj for _ _\<close> =>
      let
        val ((b,l),r) = Thm.dest_comb p |>> Thm.dest_comb
        val (lS,lth) = uset vars l  val (rS, rth) = uset vars r
@@ -68,8 +68,8 @@ let
    fun fw mi th th' th'' =
      let
       val th0 = if mi then
-           Drule.instantiate_normalize ([],[(p1_v, p1),(p2_v, p2),(mp1_v, mp1), (mp2_v, mp2)]) th
-        else Drule.instantiate_normalize ([],[(p1_v, p1),(p2_v, p2),(mp1_v, pp1), (mp2_v, pp2)]) th
+           Drule.instantiate_normalize (TVars.empty, Vars.make [(p1_v, p1),(p2_v, p2),(mp1_v, mp1), (mp2_v, mp2)]) th
+        else Drule.instantiate_normalize (TVars.empty, Vars.make [(p1_v, p1),(p2_v, p2),(mp1_v, pp1), (mp2_v, pp2)]) th
      in Thm.implies_elim (Thm.implies_elim th0 th') th'' end
   in (fw true th1 th_1 th_1', fw false th2 th_2 th_2',
       fw true th3 th_3 th_3', fw false th4 th_4 th_4', fw true th5 th_5 th_5')
@@ -78,7 +78,7 @@ let
  fun main vs p =
   let
    val ((xn,ce),(x,fm)) = (case Thm.term_of p of
-                   Const(\<^const_name>\<open>Ex\<close>,_)$Abs(xn,xT,_) =>
+                   \<^Const_>\<open>Ex _ for \<open>Abs(xn,xT,_)\<close>\<close> =>
                         Thm.dest_comb p ||> Thm.dest_abs (SOME xn) |>> pair xn
                  | _ => raise CTERM ("main QE only treats existential quantifiers!", [p]))
    val cT = Thm.ctyp_of_cterm x
@@ -99,8 +99,8 @@ let
    in
     fun provein x S =
      case Thm.term_of S of
-        Const(\<^const_name>\<open>Orderings.bot\<close>, _) => raise CTERM ("provein : not a member!", [S])
-      | Const(\<^const_name>\<open>insert\<close>, _) $ y $_ =>
+        \<^Const_>\<open>Orderings.bot _\<close> => raise CTERM ("provein : not a member!", [S])
+      | \<^Const_>\<open>insert _ for y _\<close> =>
          let val (cy,S') = Thm.dest_binop S
          in if Thm.term_of x aconv y then Thm.instantiate' [] [SOME x, SOME S'] insI1
          else Thm.implies_elim (Thm.instantiate' [] [SOME x, SOME S', SOME cy] insI2)
@@ -115,20 +115,20 @@ let
    val [pinf_conj, pinf_disj, pinf_eq, pinf_neq, pinf_lt,
         pinf_le, pinf_gt, pinf_ge, pinf_P] = pinf
    val [nmi_conj, nmi_disj, nmi_eq, nmi_neq, nmi_lt,
-        nmi_le, nmi_gt, nmi_ge, nmi_P] = map (Drule.instantiate_normalize ([],[(U_v,cU)])) nmi
+        nmi_le, nmi_gt, nmi_ge, nmi_P] = map (Drule.instantiate_normalize (TVars.empty, Vars.make [(U_v,cU)])) nmi
    val [npi_conj, npi_disj, npi_eq, npi_neq, npi_lt,
-        npi_le, npi_gt, npi_ge, npi_P] = map (Drule.instantiate_normalize ([],[(U_v,cU)])) npi
+        npi_le, npi_gt, npi_ge, npi_P] = map (Drule.instantiate_normalize (TVars.empty, Vars.make [(U_v,cU)])) npi
    val [ld_conj, ld_disj, ld_eq, ld_neq, ld_lt,
-        ld_le, ld_gt, ld_ge, ld_P] = map (Drule.instantiate_normalize ([],[(U_v,cU)])) ld
+        ld_le, ld_gt, ld_ge, ld_P] = map (Drule.instantiate_normalize (TVars.empty, Vars.make [(U_v,cU)])) ld
 
    fun decomp_mpinf fm =
      case Thm.term_of fm of
-       Const(\<^const_name>\<open>HOL.conj\<close>,_)$_$_ =>
+       \<^Const_>\<open>HOL.conj for _ _\<close> =>
         let val (p,q) = Thm.dest_binop fm
         in ([p,q], myfwd (minf_conj,pinf_conj, nmi_conj, npi_conj,ld_conj)
                          (Thm.lambda x p) (Thm.lambda x q))
         end
-     | Const(\<^const_name>\<open>HOL.disj\<close>,_)$_$_ =>
+     | \<^Const_>\<open>HOL.disj for _ _\<close> =>
         let val (p,q) = Thm.dest_binop fm
         in ([p,q],myfwd (minf_disj, pinf_disj, nmi_disj, npi_disj,ld_disj)
                          (Thm.lambda x p) (Thm.lambda x q))
@@ -176,19 +176,17 @@ val grab_atom_bop =
  let
   fun h bounds tm =
    (case Thm.term_of tm of
-     Const (\<^const_name>\<open>HOL.eq\<close>, T) $ _ $ _ =>
-       if domain_type T = HOLogic.boolT then find_args bounds tm
-       else Thm.dest_fun2 tm
-   | Const (\<^const_name>\<open>Not\<close>, _) $ _ => h bounds (Thm.dest_arg tm)
-   | Const (\<^const_name>\<open>All\<close>, _) $ _ => find_body bounds (Thm.dest_arg tm)
-   | Const (\<^const_name>\<open>Ex\<close>, _) $ _ => find_body bounds (Thm.dest_arg tm)
-   | Const (\<^const_name>\<open>HOL.conj\<close>, _) $ _ $ _ => find_args bounds tm
-   | Const (\<^const_name>\<open>HOL.disj\<close>, _) $ _ $ _ => find_args bounds tm
-   | Const (\<^const_name>\<open>HOL.implies\<close>, _) $ _ $ _ => find_args bounds tm
-   | Const (\<^const_name>\<open>Pure.imp\<close>, _) $ _ $ _ => find_args bounds tm
-   | Const (\<^const_name>\<open>Pure.eq\<close>, _) $ _ $ _ => find_args bounds tm
-   | Const (\<^const_name>\<open>Pure.all\<close>, _) $ _ => find_body bounds (Thm.dest_arg tm)
-   | Const (\<^const_name>\<open>Trueprop\<close>, _) $ _ => h bounds (Thm.dest_arg tm)
+     \<^Const_>\<open>HOL.eq \<^Type>\<open>bool\<close> for _ _\<close> => find_args bounds tm
+   | \<^Const_>\<open>Not for _\<close> => h bounds (Thm.dest_arg tm)
+   | \<^Const_>\<open>All _ for _\<close> => find_body bounds (Thm.dest_arg tm)
+   | \<^Const_>\<open>Ex _ for _\<close> => find_body bounds (Thm.dest_arg tm)
+   | \<^Const_>\<open>conj for _ _\<close> => find_args bounds tm
+   | \<^Const_>\<open>disj for _ _\<close> => find_args bounds tm
+   | \<^Const_>\<open>implies for _ _\<close> => find_args bounds tm
+   | \<^Const_>\<open>Pure.imp for _ _\<close> => find_args bounds tm
+   | \<^Const_>\<open>Pure.eq _ for _ _\<close> => find_args bounds tm
+   | \<^Const_>\<open>Pure.all _ for _\<close> => find_body bounds (Thm.dest_arg tm)
+   | \<^Const_>\<open>Trueprop for _\<close> => h bounds (Thm.dest_arg tm)
    | _ => Thm.dest_fun2 tm)
   and find_args bounds tm =
            (h bounds (Thm.dest_arg tm) handle CTERM _ => Thm.dest_arg1 tm)
@@ -206,7 +204,8 @@ fun raw_ferrack_qe_conv ctxt (thy, {isolate_conv, whatis, simpset = ss}) tm =
    val pcv = Simplifier.rewrite (put_simpset ss' ctxt);
    val postcv = Simplifier.rewrite (put_simpset ss ctxt);
    val nnf = K (nnf_conv ctxt then_conv postcv)
-   val qe_conv = Qelim.gen_qelim_conv ctxt pcv postcv pcv cons (Drule.cterm_add_frees tm [])
+   val env = Cterms.list_set_rev (Cterms.build (Drule.add_frees_cterm tm))
+   val qe_conv = Qelim.gen_qelim_conv ctxt pcv postcv pcv cons env
                   (isolate_conv ctxt) nnf
                   (fn vs => ferrack_conv ctxt (thy,{isolate_conv = isolate_conv ctxt,
                                                whatis = whatis, simpset = ss}) vs

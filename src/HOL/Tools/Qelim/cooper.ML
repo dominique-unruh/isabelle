@@ -160,10 +160,13 @@ fun myfwd (th1, th2, th3) p q
       [(th_1,th_2,th_3), (th_1',th_2',th_3')] =
   let
    val (mp', mq') = (get_pmi th_1, get_pmi th_1')
-   val mi_th = FWD (Drule.instantiate_normalize ([],[(p_v,p),(q_v,q), (p_v',mp'),(q_v',mq')]) th1)
-                   [th_1, th_1']
-   val infD_th = FWD (Drule.instantiate_normalize ([],[(p_v,mp'), (q_v, mq')]) th3) [th_3,th_3']
-   val set_th = FWD (Drule.instantiate_normalize ([],[(p_v,p), (q_v,q)]) th2) [th_2, th_2']
+   val mi_th =
+    FWD (Drule.instantiate_normalize
+          (TVars.empty, Vars.make [(p_v,p),(q_v,q), (p_v',mp'),(q_v',mq')]) th1) [th_1, th_1']
+   val infD_th =
+    FWD (Drule.instantiate_normalize (TVars.empty, Vars.make [(p_v,mp'), (q_v, mq')]) th3) [th_3,th_3']
+   val set_th =
+    FWD (Drule.instantiate_normalize (TVars.empty, Vars.make [(p_v,p), (q_v,q)]) th2) [th_2, th_2']
   in (mi_th, set_th, infD_th)
   end;
 
@@ -504,16 +507,18 @@ let
    if length (distinct (op aconv) bl) <= length (distinct (op aconv) al)
    then
     (bl,b0,decomp_minf,
-     fn B => (map (fn th => Thm.implies_elim (Thm.instantiate ([],[(B_v,B), (D_v,cd)]) th) dp)
+     fn B => (map (fn th =>
+       Thm.implies_elim (Thm.instantiate (TVars.empty, Vars.make [(B_v,B), (D_v,cd)]) th) dp)
                      [bseteq,bsetneq,bsetlt, bsetle, bsetgt,bsetge])@
-                   (map (Thm.instantiate ([],[(B_v,B), (D_v,cd)]))
+                   (map (Thm.instantiate (TVars.empty, Vars.make [(B_v,B), (D_v,cd)]))
                         [bsetdvd,bsetndvd,bsetP,infDdvd, infDndvd,bsetconj,
                          bsetdisj,infDconj, infDdisj]),
                        cpmi)
      else (al,a0,decomp_pinf,fn A =>
-          (map (fn th => Thm.implies_elim (Thm.instantiate ([],[(A_v,A), (D_v,cd)]) th) dp)
+          (map (fn th =>
+            Thm.implies_elim (Thm.instantiate (TVars.empty, Vars.make [(A_v,A), (D_v,cd)]) th) dp)
                    [aseteq,asetneq,asetlt, asetle, asetgt,asetge])@
-                   (map (Thm.instantiate ([],[(A_v,A), (D_v,cd)]))
+                   (map (Thm.instantiate (TVars.empty, Vars.make [(A_v,A), (D_v,cd)]))
                    [asetdvd,asetndvd, asetP, infDdvd, infDndvd,asetconj,
                          asetdisj,infDconj, infDdisj]),cppi)
  val cpth =
@@ -594,13 +599,12 @@ fun add_bools t =
               else insert (op aconv) t
     | f $ a => if skip orelse is_op f then add_bools a o add_bools f
               else insert (op aconv) t
-    | Abs p => add_bools (snd (Syntax_Trans.variant_abs p))  (* FIXME !? *)
+    | Abs p => add_bools (snd (Term.dest_abs p))
     | _ => if skip orelse is_op t then I else insert (op aconv) t
   end;
 
 fun descend vs (abs as (_, xT, _)) =
-  let
-    val (xn', p') = Syntax_Trans.variant_abs abs;  (* FIXME !? *)
+  let val (xn', p') = Term.dest_abs abs
   in ((xn', xT) :: vs, p') end;
 
 local structure Proc = Cooper_Procedure in

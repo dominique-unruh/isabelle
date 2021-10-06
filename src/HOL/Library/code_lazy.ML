@@ -91,7 +91,7 @@ fun add_syntax_definition short_type_name eagerT lazyT lazy_ctr lthy =
     val lthy' = (snd o Local_Theory.begin_nested) lthy
     val ((t, (_, thm)), lthy') = Specification.definition NONE [] [] 
       ((Thm.def_binding (Binding.name name), []), def) lthy'
-    val lthy' = Specification.notation true ("", false) [(t, Mixfix.mixfix "_")] lthy'
+    val lthy' = Local_Theory.notation true ("", false) [(t, Mixfix.mixfix "_")] lthy'
     val lthy = Local_Theory.end_nested lthy'
     val def_thm = singleton (Proof_Context.export lthy' lthy) thm
   in
@@ -122,7 +122,7 @@ fun add_ctr_code raw_ctrs case_thms thy =
         |> Conjunction.intr_balanced
         |> rewrite_rule ctxt [Thm.symmetric (Thm.assume assum)]
         |> Thm.implies_intr assum
-        |> Thm.generalize (Symtab.empty, Symtab.make_set params) 0
+        |> Thm.generalize (Names.empty, Names.make_set params) 0
         |> Axclass.unoverload ctxt
         |> Thm.varifyT_global
       end
@@ -378,8 +378,8 @@ fun code_lazy_type eager_type_string thy =
       ||>> fold_map (mk_name ("case_" ^ short_type_name ^ "_lazy_") "") ctr_names
 
     val mk_Lazy_delay_eq =
-      (#const lazy_ctr_def $ mk_delay (Bound 0), Rep_lazy $ (Bound 0 $ \<^const>\<open>Unity\<close>))
-      |> mk_eq |> all_abs [\<^typ>\<open>unit\<close> --> lazy_type]
+      (#const lazy_ctr_def $ mk_delay (Bound 0), Rep_lazy $ (Bound 0 $ \<^Const>\<open>Unity\<close>))
+      |> mk_eq |> all_abs [\<^Type>\<open>unit\<close> --> lazy_type]
     val (Lazy_delay_thm, lthy8a) = mk_thm 
       ((Lazy_delay_eq_name, mk_Lazy_delay_eq), [#thm lazy_ctr_def, @{thm force_delay}])
       lthy8
@@ -495,7 +495,7 @@ fun code_lazy_type eager_type_string thy =
       |> Drule.infer_instantiate' lthy10
          [SOME (Thm.cterm_of lthy10 (Const (\<^const_name>\<open>Pure.dummy_pattern\<close>, HOLogic.unitT --> lazy_type)))]
       |> Thm.generalize
-         (Symtab.make_set (map (fst o dest_TFree) type_args), Symtab.empty)
+         (Names.make_set (map (fst o dest_TFree) type_args), Names.empty)
          (Variable.maxidx_of lthy10 + 1);
 
     val ctr_post = delay_dummy_thm :: map (fn thm => thm RS @{thm sym}) ctrs_lazy_thms

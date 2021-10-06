@@ -11,6 +11,7 @@ sig
   val add_judgment: binding * typ * mixfix -> theory -> theory
   val add_judgment_cmd: binding * string * mixfix -> theory -> theory
   val judgment_name: Proof.context -> string
+  val judgment_const: Proof.context -> string * typ
   val is_judgment: Proof.context -> term -> bool
   val drop_judgment: Proof.context -> term -> term
   val fixed_judgment: Proof.context -> string -> term
@@ -91,10 +92,9 @@ fun gen_add_judgment add_consts (b, T, mx) thy =
   let
     val c = Sign.full_name thy b;
     val thy' = thy |> add_consts [(b, T, mx)];
-    val T' = Logic.unvarifyT_global (Sign.the_const_type thy' c);
   in
     thy'
-    |> Theory.add_deps_global "" (Theory.const_dep thy' (c, T')) []
+    |> Theory.add_deps_const c
     |> (Context.theory_map o map_data) (fn (base_sort, judgment, atomize_rulify) =>
         if is_some judgment then error "Attempt to redeclare object-logic judgment"
         else (base_sort, SOME c, atomize_rulify))
@@ -115,13 +115,24 @@ fun judgment_name ctxt =
     SOME name => name
   | _ => raise TERM ("Unknown object-logic judgment", []));
 
-fun is_judgment ctxt (Const (c, _) $ _) = c = judgment_name ctxt
-  | is_judgment _ _ = false;
+fun judgment_const ctxt =
+  let
+    val thy = Proof_Context.theory_of ctxt;
+    val c = judgment_name ctxt;
+    val T = Sign.the_const_type thy c;
+  in (c, T) end;
 
-fun drop_judgment ctxt (Abs (x, T, t)) = Abs (x, T, drop_judgment ctxt t)
-  | drop_judgment ctxt (tm as (Const (c, _) $ t)) =
-      if (c = judgment_name ctxt handle TERM _ => false) then t else tm
-  | drop_judgment _ tm = tm;
+fun is_judgment ctxt =
+  let val name = judgment_name ctxt
+  in fn Const (c, _) $ _ => c = name | _ => false end;
+
+fun drop_judgment ctxt =
+  let
+    val name = judgment_name ctxt;
+    fun drop (Abs (x, T, t)) = Abs (x, T, drop t)
+      | drop (t as Const (c, _) $ u) = if c = name then u else t
+      | drop t = t;
+  in drop end handle TERM _ => I;
 
 fun fixed_judgment ctxt x =
   let  (*be robust wrt. low-level errors*)

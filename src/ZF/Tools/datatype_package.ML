@@ -56,7 +56,7 @@ fun data_domain co (rec_tms, con_ty_lists) =
                    Syntax.string_of_term_global \<^theory>\<open>IFOL\<close> t));
         val rec_names = (*nat doesn't have to be added*)
             \<^const_name>\<open>nat\<close> :: map (#1 o dest_Const) rec_hds
-        val u = if co then \<^const>\<open>QUniv.quniv\<close> else \<^const>\<open>Univ.univ\<close>
+        val u = if co then \<^Const>\<open>QUniv.quniv\<close> else \<^Const>\<open>Univ.univ\<close>
         val cs = (fold o fold) (fn (_, _, _, prems) => prems |> (fold o fold_aterms)
           (fn t as Const (a, _) => if member (op =) rec_names a then I else insert (op =) t
             | _ => I)) con_ty_lists [];
@@ -88,7 +88,7 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
   (** Define the constructors **)
 
   (*The empty tuple is 0*)
-  fun mk_tuple [] = \<^const>\<open>zero\<close>
+  fun mk_tuple [] = \<^Const>\<open>zero\<close>
     | mk_tuple args = foldr1 (fn (t1, t2) => Pr.pair $ t1 $ t2) args;
 
   fun mk_inject n k u = Balanced_Tree.access
@@ -115,10 +115,10 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
 
   (*Combine split terms using case; yields the case operator for one part*)
   fun call_case case_list =
-    let fun call_f (free,[]) = Abs("null", \<^typ>\<open>i\<close>, free)
+    let fun call_f (free,[]) = Abs("null", \<^Type>\<open>i\<close>, free)
           | call_f (free,args) =
                 CP.ap_split (foldr1 CP.mk_prod (map (#2 o dest_Free) args))
-                            \<^typ>\<open>i\<close>
+                            \<^Type>\<open>i\<close>
                             free
     in  Balanced_Tree.make (fn (t1, t2) => Su.elim $ t1 $ t2) (map call_f case_list)  end;
 
@@ -162,7 +162,7 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
       Non-identifiers (e.g. infixes) get a name of the form f_op_nnn. **)
 
   (*a recursive call for x is the application rec`x  *)
-  val rec_call = \<^const>\<open>apply\<close> $ Free ("rec", \<^typ>\<open>i\<close>);
+  val rec_call = \<^Const>\<open>apply\<close> $ Free ("rec", \<^Type>\<open>i\<close>);
 
   (*look back down the "case args" (which have been reversed) to
     determine the de Bruijn index*)
@@ -187,7 +187,7 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
 
   (*Find each recursive argument and add a recursive call for it*)
   fun rec_args [] = []
-    | rec_args ((Const(\<^const_name>\<open>mem\<close>,_)$arg$X)::prems) =
+    | rec_args (\<^Const_>\<open>mem for arg X\<close>::prems) =
        (case head_of X of
             Const(a,_) => (*recursive occurrence?*)
                           if member (op =) rec_names a
@@ -199,7 +199,7 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
   (*Add an argument position for each occurrence of a recursive set.
     Strictly speaking, the recursive arguments are the LAST of the function
     variable, but they all have type "i" anyway*)
-  fun add_rec_args args' T = (map (fn _ => \<^typ>\<open>i\<close>) args') ---> T
+  fun add_rec_args args' T = (map (fn _ => \<^Type>\<open>i\<close>) args') ---> T
 
   (*Plug in the function variable type needed for the recursor
     as well as the new arguments (recursive calls)*)
@@ -231,8 +231,8 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
   val recursor_def =
       Misc_Legacy.mk_defpair
         (recursor_tm,
-         \<^const>\<open>Univ.Vrecursor\<close> $
-           absfree ("rec", \<^typ>\<open>i\<close>) (list_comb (case_const, recursor_cases)));
+         \<^Const>\<open>Univ.Vrecursor\<close> $
+           absfree ("rec", \<^Type>\<open>i\<close>) (list_comb (case_const, recursor_cases)));
 
   (* Build the new theory *)
 
@@ -270,7 +270,7 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
   (*Each equation has the form
     case(f_con1,...,f_conn)(coni(args)) = f_coni(args) *)
   fun mk_case_eqn (((_,T,_), name, args, _), case_free) =
-    FOLogic.mk_Trueprop
+    \<^make_judgment>
       (FOLogic.mk_eq
        (case_tm $
          (list_comb (Const (Sign.intern_const thy1 name,T),
@@ -310,7 +310,7 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
    | SOME recursor_def =>
       let
         (*Replace subterms rec`x (where rec is a Free var) by recursor_tm(x) *)
-        fun subst_rec (Const(\<^const_name>\<open>apply\<close>,_) $ Free _ $ arg) = recursor_tm $ arg
+        fun subst_rec \<^Const_>\<open>apply for \<open>Free _\<close> arg\<close> = recursor_tm $ arg
           | subst_rec tm =
               let val (head, args) = strip_comb tm
               in  list_comb (head, map subst_rec args)  end;
@@ -320,7 +320,7 @@ fun add_datatype_i (dom_sum, rec_tms) con_ty_lists (monos, type_intrs, type_elim
           where REC = recursor(f_con1,...,f_conn) and rec_arg is a recursive
           constructor argument.*)
         fun mk_recursor_eqn (((_,T,_), name, args, _), recursor_case) =
-          FOLogic.mk_Trueprop
+          \<^make_judgment>
            (FOLogic.mk_eq
             (recursor_tm $
              (list_comb (Const (Sign.intern_const thy2 name,T),
@@ -412,7 +412,7 @@ fun add_datatype (sdom, srec_tms) scon_ty_lists (raw_monos, raw_type_intrs, raw_
   let
     val ctxt = Proof_Context.init_global thy;
     fun read_is strs =
-      map (Syntax.parse_term ctxt #> Type.constraint \<^typ>\<open>i\<close>) strs
+      map (Syntax.parse_term ctxt #> Type.constraint \<^Type>\<open>i\<close>) strs
       |> Syntax.check_terms ctxt;
 
     val rec_tms = read_is srec_tms;

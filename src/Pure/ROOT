@@ -13,7 +13,7 @@ session Pure =
 
 session "Pure-Examples" in Examples = Pure +
   description "
-    Notable Examples in Isabelle/Pure.
+    Notable Examples for Isabelle/Pure.
   "
   theories
     First_Order_Logic
@@ -21,3 +21,16 @@ session "Pure-Examples" in Examples = Pure +
   document_files
     "root.bib"
     "root.tex"
+
+session "Pure-ex" in ex = Pure +
+  description "
+    Miscellaneous examples and experiments for Isabelle/Pure.
+  "
+  sessions
+    "Pure-Examples"
+  theories
+    Def
+    Def_Examples
+    Guess
+    Guess_Examples
+

@@ -852,7 +852,7 @@ fun derive_map_set_rel_pred_thms plugins fp live As Bs C E abs_inverses ctr_defs
                 |> unfold_thms lthy [dtor_ctor];
             in
               (fp_map_thm' RS ctor_cong RS (ctor_dtor RS sym RS trans))
-              |> Drule.generalize (Symtab.empty, Symtab.make_set [y_s])
+              |> Drule.generalize (Names.empty, Names.make_set [y_s])
             end;
 
         val map_thms =
@@ -931,7 +931,7 @@ fun derive_map_set_rel_pred_thms plugins fp live As Bs C E abs_inverses ctr_defs
               |> infer_instantiate' lthy (replicate live NONE @
                 [SOME (Thm.cterm_of lthy (ctorA $ y)), SOME (Thm.cterm_of lthy (ctorB $ z))])
               |> unfold_thms lthy [dtor_ctor]
-              |> Drule.generalize (Symtab.empty, Symtab.make_set [y_s, z_s])
+              |> Drule.generalize (Names.empty, Names.make_set [y_s, z_s])
             end;
 
         val rel_inject_thms =
@@ -2060,7 +2060,7 @@ fun mk_coinduct_strong_thm coind rel_eqs rel_monos mk_vimage2p ctxt =
     val unfolds = map2 mk_unfold rel_eqs rel_monos @ @{thms sup_fun_def sup_bool_def
       imp_disjL all_conj_distrib subst_eq_imp simp_thms(18,21,35)};
   in
-    Thm.instantiate ([], insts) coind
+    Thm.instantiate (TVars.empty, Vars.make insts) coind
     |> unfold_thms ctxt unfolds
   end;
 
@@ -2215,7 +2215,7 @@ fun derive_coinduct_corecs_thms_for_types ctxt pre_bnfs
       let
         fun mk_goal c cps gcorec n k disc =
           mk_Trueprop_eq (disc $ (gcorec $ c),
-            if n = 1 then \<^const>\<open>True\<close>
+            if n = 1 then \<^Const>\<open>True\<close>
             else Library.foldr1 HOLogic.mk_conj (seq_conds mk_maybe_not n k cps));
 
         val goalss = @{map 6} (map2 oooo mk_goal) cs cpss gcorecs ns kss discss;

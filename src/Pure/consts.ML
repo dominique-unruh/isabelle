@@ -19,6 +19,7 @@ sig
   val the_const: T -> string -> string * typ                   (*exception TYPE*)
   val the_abbreviation: T -> string -> typ * term              (*exception TYPE*)
   val type_scheme: T -> string -> typ                          (*exception TYPE*)
+  val type_arguments: T -> string -> int list list             (*exception TYPE*)
   val is_monomorphic: T -> string -> bool                      (*exception TYPE*)
   val the_constraint: T -> string -> typ                       (*exception TYPE*)
   val space_of: T -> Name_Space.T
@@ -225,9 +226,10 @@ end;
 fun instance consts (c, Ts) =
   let
     val declT = type_scheme consts c;
-    val vars = map Term.dest_TVar (typargs consts (c, declT));
-    val inst = vars ~~ Ts handle ListPair.UnequalLengths =>
-      raise TYPE ("Consts.instance", Ts, [Const (c, dummyT)]);
+    val args = typargs consts (c, declT);
+    val inst =
+      TVars.build (fold2 (fn a => fn T => TVars.add (Term.dest_TVar a, T)) args Ts)
+        handle ListPair.UnequalLengths => raise TYPE ("Consts.instance", Ts, [Const (c, dummyT)]);
   in declT |> Term_Subst.instantiateT inst end;
 
 fun dummy_types consts =

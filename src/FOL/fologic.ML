@@ -6,14 +6,6 @@ Abstract syntax operations for FOL.
 
 signature FOLOGIC =
 sig
-  val oT: typ
-  val mk_Trueprop: term -> term
-  val dest_Trueprop: term -> term
-  val not: term
-  val conj: term
-  val disj: term
-  val imp: term
-  val iff: term
   val mk_conj: term * term -> term
   val mk_disj: term * term -> term
   val mk_imp: term * term -> term
@@ -21,82 +13,34 @@ sig
   val dest_conj: term -> term list
   val mk_iff: term * term -> term
   val dest_iff: term -> term * term
-  val all_const: typ -> term
-  val mk_all: term * term -> term
-  val exists_const: typ -> term
-  val mk_exists: term * term -> term
-  val eq_const: typ -> term
+  val mk_all: string * typ -> term -> term
+  val mk_exists: string * typ -> term -> term
   val mk_eq: term * term -> term
   val dest_eq: term -> term * term
-  val mk_binop: string -> term * term -> term
-  val mk_binrel: string -> term * term -> term
-  val dest_bin: string -> typ -> term -> term * term
 end;
-
 
 structure FOLogic: FOLOGIC =
 struct
 
-val oT = Type(\<^type_name>\<open>o\<close>,[]);
+fun mk_conj (t1, t2) = \<^Const>\<open>conj for t1 t2\<close>
+and mk_disj (t1, t2) = \<^Const>\<open>disj for t1 t2\<close>
+and mk_imp (t1, t2) = \<^Const>\<open>imp for t1 t2\<close>
+and mk_iff (t1, t2) = \<^Const>\<open>iff for t1 t2\<close>;
 
-val Trueprop = Const(\<^const_name>\<open>Trueprop\<close>, oT-->propT);
+val dest_imp = \<^Const_fn>\<open>imp for A B => \<open>(A, B)\<close>\<close>;
 
-fun mk_Trueprop P = Trueprop $ P;
-
-fun dest_Trueprop (Const (\<^const_name>\<open>Trueprop\<close>, _) $ P) = P
-  | dest_Trueprop t = raise TERM ("dest_Trueprop", [t]);
-
-
-(* Logical constants *)
-
-val not = Const (\<^const_name>\<open>Not\<close>, oT --> oT);
-val conj = Const(\<^const_name>\<open>conj\<close>, [oT,oT]--->oT);
-val disj = Const(\<^const_name>\<open>disj\<close>, [oT,oT]--->oT);
-val imp = Const(\<^const_name>\<open>imp\<close>, [oT,oT]--->oT)
-val iff = Const(\<^const_name>\<open>iff\<close>, [oT,oT]--->oT);
-
-fun mk_conj (t1, t2) = conj $ t1 $ t2
-and mk_disj (t1, t2) = disj $ t1 $ t2
-and mk_imp (t1, t2) = imp $ t1 $ t2
-and mk_iff (t1, t2) = iff $ t1 $ t2;
-
-fun dest_imp (Const(\<^const_name>\<open>imp\<close>,_) $ A $ B) = (A, B)
-  | dest_imp  t = raise TERM ("dest_imp", [t]);
-
-fun dest_conj (Const (\<^const_name>\<open>conj\<close>, _) $ t $ t') = t :: dest_conj t'
+fun dest_conj \<^Const_>\<open>conj for t t'\<close> = t :: dest_conj t'
   | dest_conj t = [t];
 
-fun dest_iff (Const(\<^const_name>\<open>iff\<close>,_) $ A $ B) = (A, B)
-  | dest_iff  t = raise TERM ("dest_iff", [t]);
+val dest_iff = \<^Const_fn>\<open>iff for A B => \<open>(A, B)\<close>\<close>;
 
-fun eq_const T = Const (\<^const_name>\<open>eq\<close>, [T, T] ---> oT);
-fun mk_eq (t, u) = eq_const (fastype_of t) $ t $ u;
+fun mk_eq (t, u) =
+  let val T = fastype_of t
+  in \<^Const>\<open>eq T for t u\<close> end;
 
-fun dest_eq (Const (\<^const_name>\<open>eq\<close>, _) $ lhs $ rhs) = (lhs, rhs)
-  | dest_eq t = raise TERM ("dest_eq", [t])
+val dest_eq = \<^Const_fn>\<open>eq _ for lhs rhs => \<open>(lhs, rhs)\<close>\<close>;
 
-fun all_const T = Const (\<^const_name>\<open>All\<close>, [T --> oT] ---> oT);
-fun mk_all (Free (x, T), P) = all_const T $ absfree (x, T) P;
-
-fun exists_const T = Const (\<^const_name>\<open>Ex\<close>, [T --> oT] ---> oT);
-fun mk_exists (Free (x, T), P) = exists_const T $ absfree (x, T) P;
-
-
-(* binary oprations and relations *)
-
-fun mk_binop c (t, u) =
-  let val T = fastype_of t in
-    Const (c, [T, T] ---> T) $ t $ u
-  end;
-
-fun mk_binrel c (t, u) =
-  let val T = fastype_of t in
-    Const (c, [T, T] ---> oT) $ t $ u
-  end;
-
-fun dest_bin c T (tm as Const (c', Type ("fun", [T', _])) $ t $ u) =
-      if c = c' andalso T = T' then (t, u)
-      else raise TERM ("dest_bin " ^ c, [tm])
-  | dest_bin c _ tm = raise TERM ("dest_bin " ^ c, [tm]);
+fun mk_all (x, T) P = \<^Const>\<open>All T for \<open>absfree (x, T) P\<close>\<close>;
+fun mk_exists (x, T) P = \<^Const>\<open>Ex T for \<open>absfree (x, T) P\<close>\<close>;
 
 end;

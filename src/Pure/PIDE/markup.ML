@@ -64,6 +64,7 @@ sig
   val position_properties: string list
   val position_property: Properties.entry -> bool
   val def_name: string -> string
+  val def_theoryN: string
   val expressionN: string val expression: string -> T
   val citationN: string val citation: string -> T
   val pathN: string val path: string -> T
@@ -91,6 +92,7 @@ sig
   val theoryN: string
   val classN: string
   val localeN: string
+  val bundleN: string
   val type_nameN: string
   val constantN: string
   val axiomN: string
@@ -412,6 +414,8 @@ fun def_name a =
     SOME b => b
   | NONE => make_def a);
 
+val def_theoryN = "def_theory";
+
 
 (* expression *)
 
@@ -481,6 +485,7 @@ val sessionN = "session";
 val theoryN = "theory";
 val classN = "class";
 val localeN = "locale";
+val bundleN = "bundle";
 val type_nameN = "type_name";
 val constantN = "constant";
 val axiomN = "axiom";

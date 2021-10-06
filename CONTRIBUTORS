@@ -3,8 +3,11 @@ For the purposes of the license agreement in the file COPYRIGHT, a
 listed as an author in one of the source files of this Isabelle distribution.
 
 
-Contributions to this Isabelle version
---------------------------------------
+Contributions to Isabelle2021-1
+-------------------------------
+
+* July .. September 2021: Makarius Wenzel
+  Significantly improved Isabelle/Haskell library.
 
 * September 2021: Dominique Unruh
   New theory of infinite sums (HOL-Analysis/Infinite_Sum), 
@@ -21,7 +24,7 @@ Contributions to this Isabelle version
   More context situations susceptible to global_interpretation.
 
 * March 2021: Lukas Stevens
-  New order prover
+  New order prover.
 
 * March 2021: Florian Haftmann
   Dedicated session for combinatorics.

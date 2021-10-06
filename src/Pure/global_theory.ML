@@ -7,6 +7,7 @@ Global theory content: stored facts.
 signature GLOBAL_THEORY =
 sig
   val facts_of: theory -> Facts.T
+  val fact_space: theory -> Name_Space.T
   val check_fact: theory -> xstring * Position.T -> string
   val intern_fact: theory -> xstring -> string
   val defined_fact: theory -> string -> bool
@@ -73,6 +74,7 @@ structure Data = Theory_Data
 val facts_of = #1 o Data.get;
 val map_facts = Data.map o apfst;
 
+val fact_space = Facts.space_of o facts_of;
 fun check_fact thy = Facts.check (Context.Theory thy) (facts_of thy);
 val intern_fact = Facts.intern o facts_of;
 val defined_fact = Facts.defined o facts_of;
@@ -124,8 +126,8 @@ fun dest_thm_names thy =
 fun lookup_thm_id thy =
   let
     val theories =
-      fold (fn thy' => Symtab.update (Context.theory_long_name thy', lazy_thm_names thy'))
-        (Theory.nodes_of thy) Symtab.empty;
+      Symtab.build (Theory.nodes_of thy |> fold (fn thy' =>
+        Symtab.update (Context.theory_long_name thy', lazy_thm_names thy')));
     fun lookup (thm_id: Proofterm.thm_id) =
       (case Symtab.lookup theories (#theory_name thm_id) of
         NONE => NONE
@@ -170,8 +172,8 @@ fun get_thm thy xname =
 fun transfer_theories thy =
   let
     val theories =
-      fold (fn thy' => Symtab.update (Context.theory_name thy', thy'))
-        (Theory.nodes_of thy) Symtab.empty;
+      Symtab.build (Theory.nodes_of thy |> fold (fn thy' =>
+        Symtab.update (Context.theory_name thy', thy')));
     fun transfer th =
       Thm.transfer (the_default thy (Symtab.lookup theories (Thm.theory_name th))) th;
   in transfer end;

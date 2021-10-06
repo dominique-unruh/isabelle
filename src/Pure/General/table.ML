@@ -19,6 +19,7 @@ sig
   exception SAME
   exception UNDEF of key
   val empty: 'a table
+  val build: ('a table -> 'a table) -> 'a table
   val is_empty: 'a table -> bool
   val is_single: 'a table -> bool
   val map: (key -> 'a -> 'b) -> 'a table -> 'b table
@@ -28,9 +29,9 @@ sig
   val keys: 'a table -> key list
   val min: 'a table -> (key * 'a) option
   val max: 'a table -> (key * 'a) option
-  val get_first: (key * 'a -> 'b option) -> 'a table -> 'b option
   val exists: (key * 'a -> bool) -> 'a table -> bool
   val forall: (key * 'a -> bool) -> 'a table -> bool
+  val get_first: (key * 'a -> 'b option) -> 'a table -> 'b option
   val lookup_key: 'a table -> key -> (key * 'a) option
   val lookup: 'a table -> key -> 'a option
   val defined: 'a table -> key -> bool
@@ -81,6 +82,8 @@ exception DUP of key;
 (* empty and single *)
 
 val empty = Empty;
+
+fun build (f: 'a table -> 'a table) = f empty;
 
 fun is_empty Empty = true
   | is_empty _ = false;
@@ -137,6 +140,20 @@ fun max Empty = NONE
   | max (Branch3 (_, _, _, _, right)) = max right;
 
 
+(* exists and forall *)
+
+fun exists pred =
+  let
+    fun ex Empty = false
+      | ex (Branch2 (left, (k, x), right)) =
+          ex left orelse pred (k, x) orelse ex right
+      | ex (Branch3 (left, (k1, x1), mid, (k2, x2), right)) =
+          ex left orelse pred (k1, x1) orelse ex mid orelse pred (k2, x2) orelse ex right;
+  in ex end;
+
+fun forall pred = not o exists (not o pred);
+
+
 (* get_first *)
 
 fun get_first f =
@@ -163,9 +180,6 @@ fun get_first f =
               | some => some)
           | some => some);
   in get end;
-
-fun exists pred = is_some o get_first (fn entry => if pred entry then SOME () else NONE);
-fun forall pred = not o exists (not o pred);
 
 
 (* lookup *)
@@ -388,7 +402,7 @@ fun remove eq (key, x) tab =
 
 (* simultaneous modifications *)
 
-fun make entries = fold update_new entries empty;
+fun make entries = build (fold update_new entries);
 
 fun join f (table1, table2) =
   let
@@ -419,18 +433,18 @@ fun update_list eq (key, x) =
   modify key (fn NONE => [x] | SOME [] => [x] | SOME (xs as y :: _) =>
     if eq (x, y) then raise SAME else Library.update eq x xs);
 
-fun make_list args = fold_rev cons_list args empty;
+fun make_list args = build (fold_rev cons_list args);
 fun dest_list tab = maps (fn (key, xs) => map (pair key) xs) (dest tab);
 fun merge_list eq = join (fn _ => Library.merge eq);
 
 
-(* unit tables *)
+(* set operations *)
 
 type set = unit table;
 
 fun insert_set x = default (x, ());
 fun remove_set x : set -> set = delete_safe x;
-fun make_set entries = fold insert_set entries empty;
+fun make_set xs = build (fold insert_set xs);
 
 
 (* ML pretty-printing *)

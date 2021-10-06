@@ -158,25 +158,25 @@ class Session(_session_options: => Options, val resources: Resources) extends Do
 
   def assert_dispatcher[A](body: => A): A =
   {
-    assert(dispatcher.check_thread)
+    assert(dispatcher.check_thread())
     body
   }
 
   def require_dispatcher[A](body: => A): A =
   {
-    require(dispatcher.check_thread, "not on dispatcher thread")
+    require(dispatcher.check_thread(), "not on dispatcher thread")
     body
   }
 
   def send_dispatcher(body: => Unit): Unit =
   {
-    if (dispatcher.check_thread) body
+    if (dispatcher.check_thread()) body
     else dispatcher.send(() => body)
   }
 
   def send_wait_dispatcher(body: => Unit): Unit =
   {
-    if (dispatcher.check_thread) body
+    if (dispatcher.check_thread()) body
     else dispatcher.send_wait(() => body)
   }
 
@@ -699,7 +699,7 @@ class Session(_session_options: => Options, val resources: Resources) extends Do
 
   def get_state(): Document.State =
   {
-    if (manager.is_active) {
+    if (manager.is_active()) {
       val promise = Future.promise[Document.State]
       manager.send_wait(Get_State(promise))
       promise.join

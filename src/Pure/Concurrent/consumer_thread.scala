@@ -48,8 +48,8 @@ final class Consumer_Thread[A] private(
   private val mailbox = Mailbox[Option[Request]]
 
   private val thread = Isabelle_Thread.fork(name = name, daemon = daemon) { main_loop(Nil) }
-  def is_active: Boolean = active && thread.isAlive
-  def check_thread: Boolean = Thread.currentThread == thread
+  def is_active(): Boolean = active && thread.isAlive
+  def check_thread(): Boolean = Thread.currentThread == thread
 
   private def failure(exn: Throwable): Unit =
     Output.error_message(
@@ -66,7 +66,7 @@ final class Consumer_Thread[A] private(
     val ack: Option[Synchronized[Option[Exn.Result[Unit]]]] =
       if (acknowledge) Some(Synchronized(None)) else None
 
-    def await: Unit =
+    def await(): Unit =
     {
       for (a <- ack) {
         Exn.release(a.guarded_access({ case None => None case res => Some((res.get, res)) }))
@@ -77,10 +77,10 @@ final class Consumer_Thread[A] private(
   private def request(req: Request): Unit =
   {
     synchronized {
-      if (is_active) mailbox.send(Some(req))
+      if (is_active()) mailbox.send(Some(req))
       else error("Consumer thread not active: " + quote(thread.getName))
     }
-    req.await
+    req.await()
   }
 
   @tailrec private def main_loop(msgs: List[Option[Request]]): Unit =
@@ -98,9 +98,9 @@ final class Consumer_Thread[A] private(
         for { (Some(req), Some(res)) <- reqs.map(Some(_)).zipAll(results.map(Some(_)), None, None) }
         {
           (req.ack, res) match {
-            case ((Some(a), _)) => a.change(_ => Some(res))
-            case ((None, Exn.Res(_))) =>
-            case ((None, Exn.Exn(exn))) => failure(exn)
+            case (Some(a), _) => a.change(_ => Some(res))
+            case (None, Exn.Res(_)) =>
+            case (None, Exn.Exn(exn)) => failure(exn)
           }
         }
 
@@ -111,14 +111,14 @@ final class Consumer_Thread[A] private(
 
   /* main methods */
 
-  assert(is_active)
+  assert(is_active())
 
   def send(arg: A): Unit = request(new Request(arg))
   def send_wait(arg: A): Unit = request(new Request(arg, acknowledge = true))
 
   def shutdown(): Unit =
   {
-    synchronized { if (is_active) { active = false; mailbox.send(None) } }
+    synchronized { if (is_active()) { active = false; mailbox.send(None) } }
     thread.join()
   }
 }

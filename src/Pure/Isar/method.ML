@@ -38,6 +38,7 @@ sig
   val erule: Proof.context -> int -> thm list -> method
   val drule: Proof.context -> int -> thm list -> method
   val frule: Proof.context -> int -> thm list -> method
+  val method_space: Context.generic -> Name_Space.T
   val set_tactic: (morphism -> thm list -> tactic) -> Context.generic -> Context.generic
   val clean_facts: thm list -> thm list
   val set_facts: thm list -> Proof.context -> Proof.context
@@ -118,7 +119,7 @@ val succeed = METHOD (K all_tac);
 
 fun insert_tac _ [] _ = all_tac
   | insert_tac ctxt facts i =
-      EVERY (map (fn r => resolve_tac ctxt [Drule.forall_intr_vars r COMP_INCR revcut_rl] i) facts);
+      EVERY (map (fn r => resolve_tac ctxt [Thm.forall_intr_vars r COMP_INCR revcut_rl] i) facts);
 
 fun insert thms =
   CONTEXT_METHOD (fn _ => fn (ctxt, st) =>
@@ -311,6 +312,8 @@ val get_methods = #methods o Data.get;
 val ops_methods =
  {get_data = get_methods,
   put_data = fn methods => map_data (fn (_, ml_tactic, facts) => (methods, ml_tactic, facts))};
+
+val method_space = Name_Space.space_of_table o get_methods;
 
 
 (* ML tactic *)

@@ -61,7 +61,7 @@ sig
   val strip_sorts: typ -> typ
   val strip_sorts_dummy: typ -> typ
   val no_tvars: typ -> typ
-  val varify_global: (string * sort) list -> term -> ((string * sort) * indexname) list * term
+  val varify_global: TFrees.set -> term -> ((string * sort) * indexname) list * term
   val legacy_freeze_thaw_type: typ -> typ * (typ -> typ)
   val legacy_freeze_type: typ -> typ
   val legacy_freeze_thaw: term -> term * (term -> term)
@@ -355,10 +355,12 @@ fun no_tvars T =
 
 fun varify_global fixed t =
   let
-    val fs = Term.fold_types (Term.fold_atyps
-      (fn TFree v => if member (op =) fixed v then I else insert (op =) v | _ => I)) t [];
-    val used = Name.context
-      |> fold_types (fold_atyps (fn TVar ((a, _), _) => Name.declare a | _ => I)) t;
+    val fs =
+      build (t |> (Term.fold_types o Term.fold_atyps)
+        (fn TFree v => if TFrees.defined fixed v then I else insert (op =) v | _ => I));
+    val used =
+      Name.build_context (t |>
+        (fold_types o fold_atyps) (fn TVar ((a, _), _) => Name.declare a | _ => I));
     val fmap = fs ~~ map (rpair 0) (#1 (fold_map Name.variant (map fst fs) used));
     fun thaw (f as (_, S)) =
       (case AList.lookup (op =) fmap f of
@@ -446,7 +448,7 @@ fun typ_match tsig =
   in match end;
 
 fun typ_instance tsig (T, U) =
-  (typ_match tsig (U, T) Vartab.empty; true) handle TYPE_MATCH => false;
+  (Vartab.build (typ_match tsig (U, T)); true) handle TYPE_MATCH => false;
 
 (*purely structural matching*)
 fun raw_match (TVar (v, S), T) subs =
@@ -474,7 +476,7 @@ and could_matches (T :: Ts, U :: Us) = could_match (T, U) andalso could_matches 
 
 fun raw_instance (T, U) =
   if could_match (U, T) then
-    (raw_match (U, T) Vartab.empty; true) handle TYPE_MATCH => false
+    (Vartab.build (raw_match (U, T)); true) handle TYPE_MATCH => false
   else false;
 
 

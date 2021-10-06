@@ -65,8 +65,10 @@ fun pcv ctxt = Simplifier.rewrite (put_simpset ss ctxt)
 in
 
 fun standard_qelim_conv ctxt atcv ncv qcv p =
-  let val pcv = pcv ctxt
-  in gen_qelim_conv ctxt pcv pcv pcv cons (Drule.cterm_add_frees p []) atcv ncv qcv p end
+  let
+    val pcv = pcv ctxt
+    val env = Cterms.list_set_rev (Cterms.build (Drule.add_frees_cterm p))
+  in gen_qelim_conv ctxt pcv pcv pcv cons env atcv ncv qcv p end
 
 end;
 

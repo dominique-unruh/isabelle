@@ -159,9 +159,7 @@ There are three main ways to install automatic provers on your machine:
 \begin{enum}
 \item[\labelitemi] If you installed an official Isabelle package, it should
 already include properly set up executables for CVC4, E, SPASS, Vampire, veriT,
-and Z3, ready to use. To use Vampire, you must confirm that you are a
-noncommercial user, as indicated by the message that is displayed when
-Sledgehammer is invoked the first time.
+and Z3, ready to use.
 
 \item[\labelitemi] Alternatively, you can download the Isabelle-aware CVC4, E,
 SPASS, Vampire, veriT, and Z3 binary packages from \download. Extract the
@@ -194,7 +192,7 @@ should also set \texttt{E\_VERSION}, \texttt{LEO2\_VERSION},
 number (e.g., ``3.6'').
 
 Similarly, if you want to install CVC4, veriT, or Z3, set the environment
-variable \texttt{CVC4\_\allowbreak SOLVER}, \texttt{VERIT\_\allowbreak SOLVER},
+variable \texttt{CVC4\_\allowbreak SOLVER}, \texttt{ISABELLE\_\allowbreak VERIT},
 or \texttt{Z3\_SOLVER} to the complete path of the executable, \emph{including
 the file name}. Ideally, also set \texttt{CVC4\_VERSION},
 \texttt{VERIT\_VERSION}, or \texttt{Z3\_VERSION} to the solver's version number
@@ -237,13 +235,13 @@ Proof found\ldots \\
 %
 ``\textit{z3\/}'': Try this: \textbf{by} \textit{simp} (0.5 ms) \\
 %
-``\textit{spass\/}'': Try this: \textbf{by} \textit{simp} (0.3 ms)
+``\textit{vampire\/}'': Try this: \textbf{by} \textit{simp} (0.3 ms)
 %
 \postw
 
-Sledgehammer ran CVC4, E, SPASS, and Z3 in parallel. Depending on which
-provers are installed and how many processor cores are available, some of the
-provers might be missing or present with a \textit{remote\_} prefix.
+Sledgehammer ran CVC4, E, Vampire, and Z3 in parallel. This list may vary
+depending on which provers are installed and how many processor cores are
+available.
 
 For each successful prover, Sledgehammer gives a one-line Isabelle proof. Rough
 timings are shown in parentheses, indicating how fast the call is. You can
@@ -744,7 +742,7 @@ executable and \texttt{VAMPIRE\_VERSION} to the version number (e.g.,
 \item[\labelitemi] \textbf{\textit{verit}:} veriT \cite{bouton-et-al-2009} is an
 SMT solver developed by David D\'eharbe, Pascal Fontaine, and their colleagues.
 It is designed to produce detailed proofs for reconstruction in proof
-assistants. To use veriT, set the environment variable \texttt{VERIT\_SOLVER}
+assistants. To use veriT, set the environment variable \texttt{ISABELLE\_VERIT}
 to the complete path of the executable, including the file name.
 
 \item[\labelitemi] \textbf{\textit{z3}:} Z3 is an SMT solver developed at

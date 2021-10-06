@@ -35,9 +35,6 @@ sig
   val definition: (binding * typ option * mixfix) option ->
     (binding * typ option * mixfix) list -> term list -> Attrib.binding * term ->
     local_theory -> (term * (string * thm)) * local_theory
-  val definition': (binding * typ option * mixfix) option ->
-    (binding * typ option * mixfix) list ->  term list -> Attrib.binding * term ->
-    bool -> local_theory -> (term * (string * thm)) * local_theory
   val definition_cmd: (binding * string option * mixfix) option ->
     (binding * string option * mixfix) list -> string list -> Attrib.binding * string ->
     bool -> local_theory -> (term * (string * thm)) * local_theory
@@ -49,11 +46,6 @@ sig
   val alias_cmd: binding * (xstring * Position.T) -> local_theory -> local_theory
   val type_alias: binding * string -> local_theory -> local_theory
   val type_alias_cmd: binding * (xstring * Position.T) -> local_theory -> local_theory
-  val type_notation: bool -> Syntax.mode -> (typ * mixfix) list -> local_theory -> local_theory
-  val type_notation_cmd: bool -> Syntax.mode -> (string * mixfix) list ->
-    local_theory -> local_theory
-  val notation: bool -> Syntax.mode -> (term * mixfix) list -> local_theory -> local_theory
-  val notation_cmd: bool -> Syntax.mode -> (string * mixfix) list -> local_theory -> local_theory
   val theorems: string ->
     (Attrib.binding * Attrib.thms) list ->
     (binding * typ option * mixfix) list ->
@@ -262,7 +254,6 @@ fun gen_def prep_spec prep_att raw_var raw_params raw_prems ((a, raw_atts), raw_
           else
             error ("Head of definition " ^ quote x ^ " differs from declaration " ^ quote y ^
               Position.here (Binding.pos_of b)));
-    val const_name = Local_Theory.full_name lthy b;
 
     val name = Thm.def_binding_optional b a;
     val ((lhs, (_, raw_th)), lthy2) = lthy
@@ -281,11 +272,10 @@ fun gen_def prep_spec prep_att raw_var raw_params raw_prems ((a, raw_atts), raw_
 
     val _ =
       Proof_Display.print_consts int (Position.thread_data ()) lthy5
-        (member (op =) (Term.add_frees lhs' [])) [(x, T)];
+        (Frees.defined (Frees.build (Frees.add_frees lhs'))) [(x, T)];
   in ((lhs, (def_name, th')), lthy5) end;
 
-val definition' = gen_def check_spec_open (K I);
-fun definition xs ys As B = definition' xs ys As B false;
+fun definition xs ys As B = gen_def check_spec_open (K I) xs ys As B false;
 val definition_cmd = gen_def read_spec_open Attrib.check_src;
 
 
@@ -337,28 +327,6 @@ val type_alias =
   gen_alias Local_Theory.type_alias (K (K (fn c => (c, []))));
 val type_alias_cmd =
   gen_alias Local_Theory.type_alias (apfst (#1 o dest_Type) ooo Proof_Context.check_type_name);
-
-
-(* notation *)
-
-local
-
-fun gen_type_notation prep_type add mode args lthy =
-  lthy |> Local_Theory.type_notation add mode (map (apfst (prep_type lthy)) args);
-
-fun gen_notation prep_const add mode args lthy =
-  lthy |> Local_Theory.notation add mode (map (apfst (prep_const lthy)) args);
-
-in
-
-val type_notation = gen_type_notation (K I);
-val type_notation_cmd =
-  gen_type_notation (Proof_Context.read_type_name {proper = true, strict = false});
-
-val notation = gen_notation (K I);
-val notation_cmd = gen_notation (Proof_Context.read_const {proper = false, strict = false});
-
-end;
 
 
 (* fact statements *)

@@ -69,16 +69,15 @@ sig
   val export: Proof.context -> Proof.context -> thm list -> thm list
   val export_morphism: Proof.context -> Proof.context -> morphism
   val invent_types: sort list -> Proof.context -> (string * sort) list * Proof.context
-  val importT_inst: term list -> Proof.context -> ((indexname * sort) * typ) list * Proof.context
+  val importT_inst: term list -> Proof.context -> typ TVars.table * Proof.context
   val import_inst: bool -> term list -> Proof.context ->
-    (((indexname * sort) * typ) list * ((indexname * typ) * term) list) * Proof.context
+    (typ TVars.table * term Vars.table) * Proof.context
   val importT_terms: term list -> Proof.context -> term list * Proof.context
   val import_terms: bool -> term list -> Proof.context -> term list * Proof.context
-  val importT: thm list -> Proof.context ->
-    (((indexname * sort) * ctyp) list * thm list) * Proof.context
+  val importT: thm list -> Proof.context -> (ctyp TVars.table * thm list) * Proof.context
   val import_prf: bool -> Proofterm.proof -> Proof.context -> Proofterm.proof * Proof.context
   val import: bool -> thm list -> Proof.context ->
-    ((((indexname * sort) * ctyp) list * ((indexname * typ) * cterm) list) * thm list) * Proof.context
+    ((ctyp TVars.table * cterm Vars.table) * thm list) * Proof.context
   val import_vars: Proof.context -> thm -> thm
   val tradeT: (Proof.context -> thm list -> thm list) -> Proof.context -> thm list -> thm list
   val trade: (Proof.context -> thm list -> thm list) -> Proof.context -> thm list -> thm list
@@ -268,7 +267,7 @@ val declare_typ = declare_term o Logic.mk_type;
 val declare_prf =
   Proofterm.fold_proof_terms_types declare_internal (declare_internal o Logic.mk_type);
 
-val declare_thm = Thm.fold_terms declare_internal;
+val declare_thm = Thm.fold_terms {hyps = true} declare_internal;
 
 
 (* renaming term/type frees *)
@@ -516,14 +515,14 @@ fun export_inst inner outer =
     val still_fixed = not o is_newly_fixed inner outer;
 
     val gen_fixes =
-      Name_Space.fold_table (fn (y, _) => not (is_fixed outer y) ? Symtab.insert_set y)
-        (fixes_of inner) Symtab.empty;
+      Names.build (fixes_of inner |> Name_Space.fold_table (fn (y, _) =>
+        not (is_fixed outer y) ? Names.add_set y));
 
     val type_occs_inner = type_occs_of inner;
     fun gen_fixesT ts =
-      Symtab.fold (fn (a, xs) =>
+      Names.build (fold decl_type_occs ts type_occs_inner |> Symtab.fold (fn (a, xs) =>
         if declared_outer a orelse exists still_fixed xs
-        then I else Symtab.insert_set a) (fold decl_type_occs ts type_occs_inner) Symtab.empty;
+        then I else Names.add_set a));
   in (gen_fixesT, gen_fixes) end;
 
 fun exportT_inst inner outer = #1 (export_inst inner outer);
@@ -534,7 +533,7 @@ fun exportT_terms inner outer =
     val maxidx = maxidx_of outer;
   in
     fn ts => ts |> map
-      (Term_Subst.generalize (mk_tfrees ts, Symtab.empty)
+      (Term_Subst.generalize (mk_tfrees ts, Names.empty)
         (fold (Term.fold_types Term.maxidx_typ) ts maxidx + 1))
   end;
 
@@ -565,7 +564,7 @@ fun gen_export (mk_tfrees, frees) maxidx ths =
     val idx = fold Thm.maxidx_thm ths maxidx + 1;
   in map (Thm.generalize (tfrees, frees) idx) ths end;
 
-fun exportT inner outer = gen_export (exportT_inst inner outer, Symtab.empty) (maxidx_of outer);
+fun exportT inner outer = gen_export (exportT_inst inner outer, Names.empty) (maxidx_of outer);
 fun export inner outer = gen_export (export_inst inner outer) (maxidx_of outer);
 
 fun export_morphism inner outer =
@@ -591,22 +590,25 @@ fun invent_types Ss ctxt =
 
 fun importT_inst ts ctxt =
   let
-    val tvars = rev (fold Term.add_tvars ts []);
+    val tvars = TVars.build (fold TVars.add_tvars ts) |> TVars.list_set;
     val (tfrees, ctxt') = invent_types (map #2 tvars) ctxt;
-  in (tvars ~~ map TFree tfrees, ctxt') end;
+    val instT = TVars.build (fold2 (fn a => fn b => TVars.add (a, TFree b)) tvars tfrees);
+  in (instT, ctxt') end;
 
 fun import_inst is_open ts ctxt =
   let
     val ren = Name.clean #> (if is_open then I else Name.internal);
     val (instT, ctxt') = importT_inst ts ctxt;
-    val vars = map (apsnd (Term_Subst.instantiateT instT)) (rev (fold Term.add_vars ts []));
-    val (xs, ctxt'') = variant_fixes (map (ren o #1 o #1) vars) ctxt';
-    val inst = vars ~~ map Free (xs ~~ map #2 vars);
+    val vars =
+      Vars.build (fold Vars.add_vars ts) |> Vars.list_set
+      |> map (apsnd (Term_Subst.instantiateT instT));
+    val (ys, ctxt'') = variant_fixes (map (ren o #1 o #1) vars) ctxt';
+    val inst = Vars.build (fold2 (fn (x, T) => fn y => Vars.add ((x, T), Free (y, T))) vars ys);
   in ((instT, inst), ctxt'') end;
 
 fun importT_terms ts ctxt =
   let val (instT, ctxt') = importT_inst ts ctxt
-  in (map (Term_Subst.instantiate (instT, [])) ts, ctxt') end;
+  in (map (Term_Subst.instantiate (instT, Vars.empty)) ts, ctxt') end;
 
 fun import_terms is_open ts ctxt =
   let val (inst, ctxt') = import_inst is_open ts ctxt
@@ -615,8 +617,8 @@ fun import_terms is_open ts ctxt =
 fun importT ths ctxt =
   let
     val (instT, ctxt') = importT_inst (map Thm.full_prop_of ths) ctxt;
-    val instT' = map (apsnd (Thm.ctyp_of ctxt')) instT;
-    val ths' = map (Thm.instantiate (instT', [])) ths;
+    val instT' = TVars.map (K (Thm.ctyp_of ctxt')) instT;
+    val ths' = map (Thm.instantiate (instT', Vars.empty)) ths;
   in ((instT', ths'), ctxt') end;
 
 fun import_prf is_open prf ctxt =
@@ -628,11 +630,10 @@ fun import_prf is_open prf ctxt =
 fun import is_open ths ctxt =
   let
     val ((instT, inst), ctxt') = import_inst is_open (map Thm.full_prop_of ths) ctxt;
-    val insts' =
-     (map (apsnd (Thm.ctyp_of ctxt')) instT,
-      map (apsnd (Thm.cterm_of ctxt')) inst);
-    val ths' = map (Thm.instantiate insts') ths;
-  in ((insts', ths'), ctxt') end;
+    val instT' = TVars.map (K (Thm.ctyp_of ctxt')) instT;
+    val inst' = Vars.map (K (Thm.cterm_of ctxt')) inst;
+    val ths' = map (Thm.instantiate (instT', inst')) ths;
+  in (((instT', inst'), ths'), ctxt') end;
 
 fun import_vars ctxt th =
   let val ((_, [th']), _) = ctxt |> set_body false |> import true [th];
@@ -687,10 +688,10 @@ fun focus_cterm bindings goal ctxt =
 
 fun focus_subgoal bindings i st =
   let
-    val all_vars = Thm.fold_terms Term.add_vars st [];
+    val all_vars = Vars.build (Thm.fold_terms {hyps = false} Vars.add_vars st);
   in
-    fold (unbind_term o #1) all_vars #>
-    fold (declare_constraints o Var) all_vars #>
+    Vars.fold (unbind_term o #1 o #1) all_vars #>
+    Vars.fold (declare_constraints o Var o #1) all_vars #>
     focus_cterm bindings (Thm.cprem_of st i)
   end;
 
@@ -729,14 +730,14 @@ fun polymorphic_types ctxt ts =
     val occs = type_occs_of ctxt;
     val occs' = type_occs_of ctxt';
     val types =
-      Symtab.fold (fn (a, _) =>
-        if Symtab.defined occs a then I else Symtab.insert_set a) occs' Symtab.empty;
+      Names.build (occs' |> Symtab.fold (fn (a, _) =>
+        if Symtab.defined occs a then I else Names.add_set a));
     val idx = maxidx_of ctxt' + 1;
     val Ts' = (fold o fold_types o fold_atyps)
       (fn T as TFree _ =>
           (case Term_Subst.generalizeT types idx T of TVar v => insert (op =) v | _ => I)
         | _ => I) ts [];
-    val ts' = map (Term_Subst.generalize (types, Symtab.empty) idx) ts;
+    val ts' = map (Term_Subst.generalize (types, Names.empty) idx) ts;
   in (rev Ts', ts') end;
 
 fun polymorphic ctxt ts = snd (polymorphic_types ctxt ts);

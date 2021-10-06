@@ -101,7 +101,7 @@ text %mlref \<open>
   @{define_ML Variable.export: "Proof.context -> Proof.context -> thm list -> thm list"} \\
   @{define_ML Variable.polymorphic: "Proof.context -> term list -> term list"} \\
   @{define_ML Variable.import: "bool -> thm list -> Proof.context ->
-  ((((indexname * sort) * ctyp) list * ((indexname * typ) * cterm) list) * thm list)
+  ((ctyp TVars.table * cterm Vars.table) * thm list)
     * Proof.context"} \\
   @{define_ML Variable.focus: "binding list option -> term -> Proof.context ->
   ((string * (string * typ)) list * term) * Proof.context"} \\
@@ -352,10 +352,11 @@ text \<open>
   means of a given tactic. This acts like a dual conclusion: the proof
   demonstrates that the context may be augmented by parameters and
   assumptions, without affecting any conclusions that do not mention these
-  parameters. See also @{cite "isabelle-isar-ref"} for the user-level
-  @{command obtain} and @{command guess} elements. Final results, which may
-  not refer to the parameters in the conclusion, need to exported explicitly
-  into the original context.\<close>
+  parameters. See also @{cite "isabelle-isar-ref"} for the corresponding Isar
+  proof command @{command obtain}. Final results, which may not refer to the
+  parameters in the conclusion, need to exported explicitly into the original
+  context.
+\<close>
 
 text %mlref \<open>
   \begin{mldecls}

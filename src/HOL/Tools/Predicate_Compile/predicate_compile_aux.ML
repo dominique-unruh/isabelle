@@ -870,8 +870,8 @@ fun expand_tuples thy intro =
     val (pats', _, ctxt3) = fold_atoms rewrite_prem intro_t' (pats', intro_t', ctxt2)
     fun rewrite_pat (ct1, ct2) =
       (ct1, Thm.cterm_of ctxt3 (Pattern.rewrite_term thy pats' [] (Thm.term_of ct2)))
-    val t_insts' = map rewrite_pat t_insts
-    val intro'' = Thm.instantiate (T_insts, t_insts') intro
+    val t_insts' = map rewrite_pat (Vars.dest t_insts)
+    val intro'' = Thm.instantiate (T_insts, Vars.make t_insts') intro
     val [intro'''] = Variable.export ctxt3 ctxt [intro'']
     val intro'''' =
       Simplifier.full_simplify
@@ -941,9 +941,9 @@ fun instantiated_case_rewrite thy Tcon =
     val f' = absdummy (U --> T') (Bound 0 $ y)
     val th' =
       Thm.instantiate
-        ([(dest_TVar uninst_T, Thm.ctyp_of ctxt' (U --> T')),
+        (TVars.make [(dest_TVar uninst_T, Thm.ctyp_of ctxt' (U --> T')),
           (dest_TVar uninst_T', Thm.ctyp_of ctxt' T')],
-         [((fst (dest_Var f), (U --> T') --> T'), Thm.cterm_of ctxt' f')]) th
+         Vars.make [((fst (dest_Var f), (U --> T') --> T'), Thm.cterm_of ctxt' f')]) th
     val [th'] = Variable.export (Variable.declare_thm th' ctxt') ctxt [th']
   in
     th'
@@ -1072,7 +1072,7 @@ fun import_intros inp_pred [] ctxt =
                   " (trying to match " ^ Syntax.string_of_typ ctxt' (fastype_of pred') ^
                   " and " ^ Syntax.string_of_typ ctxt' (fastype_of pred) ^ ")" ^
                   " in " ^ Thm.string_of_thm ctxt' th)
-          in map (fn (xi, (S, T)) => ((xi, S), T)) (Vartab.dest subst) end
+          in TVars.build (Vartab.fold (fn (xi, (S, T)) => TVars.add ((xi, S), T)) subst) end
         fun instantiate_typ th =
           let
             val (pred', _) = strip_intro_concl th
@@ -1080,15 +1080,21 @@ fun import_intros inp_pred [] ctxt =
               if not (fst (dest_Const pred) = fst (dest_Const pred')) then
                 raise Fail "Trying to instantiate another predicate"
               else ()
-          in Thm.instantiate (map (apsnd (Thm.ctyp_of ctxt')) (subst_of (pred', pred)), []) th end
+            val instT =
+              TVars.fold (fn (v, T) => cons (v, Thm.ctyp_of ctxt' T))
+                (subst_of (pred', pred)) [];
+          in Thm.instantiate (TVars.make instT, Vars.empty) th end
         fun instantiate_ho_args th =
           let
             val (_, args') =
               (strip_comb o HOLogic.dest_Trueprop o Logic.strip_imp_concl o Thm.prop_of) th
             val ho_args' = map dest_Var (ho_args_of_typ T args')
-          in Thm.instantiate ([], ho_args' ~~ map (Thm.cterm_of ctxt') ho_args) th end
+          in
+            Thm.instantiate (TVars.empty, Vars.make (ho_args' ~~ map (Thm.cterm_of ctxt') ho_args))
+              th
+          end
         val outp_pred =
-          Term_Subst.instantiate (subst_of (inp_pred, pred), []) inp_pred
+          Term_Subst.instantiate (subst_of (inp_pred, pred), Vars.empty) inp_pred
         val ((_, ths'), ctxt1) =
           Variable.import false (map (instantiate_typ #> instantiate_ho_args) ths) ctxt'
       in
@@ -1156,7 +1162,8 @@ fun unify_consts thy cs intr_ts =
   let
      val add_term_consts_2 = fold_aterms (fn Const c => insert (op =) c | _ => I);
      fun varify (t, (i, ts)) =
-       let val t' = map_types (Logic.incr_tvar (i + 1)) (#2 (Type.varify_global [] t))
+       let
+         val t' = map_types (Logic.incr_tvar (i + 1)) (#2 (Type.varify_global TFrees.empty t))
        in (maxidx_of_term t', t' :: ts) end
      val (i, cs') = List.foldr varify (~1, []) cs
      val (i', intr_ts') = List.foldr varify (i, []) intr_ts

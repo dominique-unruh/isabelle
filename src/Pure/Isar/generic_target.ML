@@ -95,8 +95,10 @@ fun export_abbrev lthy preprocess rhs =
     val u = fold_rev lambda term_params rhs';
     val global_rhs = singleton (Variable.polymorphic thy_ctxt) u;
 
+    val type_tfrees = TFrees.build (TFrees.add_tfreesT (Term.fastype_of u));
     val extra_tfrees =
-      subtract (op =) (Term.add_tfreesT (Term.fastype_of u) []) (Term.add_tfrees u []);
+      TFrees.build (TFrees.add_tfrees_unless (TFrees.defined type_tfrees) u)
+      |> TFrees.keys;
     val type_params = map (Logic.mk_type o TFree) extra_tfrees;
   in (global_rhs, (extra_tfrees, (type_params, term_params))) end;
 
@@ -106,7 +108,7 @@ fun check_mixfix ctxt (b, extra_tfrees) mx =
    (if Context_Position.is_visible ctxt then
       warning
         ("Additional type variable(s) in specification of " ^ Binding.print b ^ ": " ^
-          commas (map (Syntax.string_of_typ ctxt o TFree) (sort_by #1 extra_tfrees)) ^
+          commas (map (Syntax.string_of_typ ctxt o TFree) extra_tfrees) ^
           (if Mixfix.is_empty mx then ""
            else "\nDropping mixfix syntax " ^ Pretty.string_of (Mixfix.pretty_mixfix mx)))
     else (); NoSyn);
@@ -241,7 +243,7 @@ fun standard_registration pred registration lthy =
     then Context.proof_map (Locale.add_registration registration)
     else I) lthy;
 
-val local_interpretation = standard_registration (fn (n, level) => level = n - 1);
+val local_interpretation = standard_registration (fn (n, level) => level >= n - 1);
 
 
 
@@ -259,8 +261,10 @@ fun define foundation internal ((b, mx), ((b_def, atts), rhs)) lthy =
 
     val xs = Variable.add_fixed lthy rhs' [];
     val T = Term.fastype_of rhs;
-    val tfreesT = Term.add_tfreesT T (fold (Term.add_tfreesT o #2) xs []);
-    val extra_tfrees = rev (subtract (op =) tfreesT (Term.add_tfrees rhs []));
+    val type_tfrees = TFrees.build (TFrees.add_tfreesT T #> fold (TFrees.add_tfreesT o #2) xs);
+    val extra_tfrees =
+      TFrees.build (rhs |> TFrees.add_tfrees_unless (TFrees.defined type_tfrees))
+      |> TFrees.keys;
     val mx' = check_mixfix lthy (b, extra_tfrees) mx;
 
     val type_params = map (Logic.mk_type o TFree) extra_tfrees;
@@ -302,8 +306,12 @@ fun import_export_proof ctxt (name, raw_th) =
     val asms' = map (rewrite_rule ctxt (Drule.norm_hhf_eqs @ defs)) asms;
 
     (*export fixes*)
-    val tfrees = map TFree (Thm.fold_terms Term.add_tfrees th' []);
-    val frees = map Free (Thm.fold_terms Term.add_frees th' []);
+    val tfrees =
+      TFrees.build (Thm.fold_terms {hyps = true} TFrees.add_tfrees th')
+      |> TFrees.keys |> map TFree;
+    val frees =
+      Frees.build (Thm.fold_terms {hyps = true} Frees.add_frees th')
+      |> Frees.list_set_rev |> map Free;
     val (th'' :: vs) =
       (th' :: map (Drule.mk_term o Thm.cterm_of ctxt) (map Logic.mk_type tfrees @ frees))
       |> Variable.export ctxt thy_ctxt
@@ -317,14 +325,19 @@ fun import_export_proof ctxt (name, raw_th) =
       chop (length tfrees) (map (Thm.term_of o Drule.dest_term) vs)
       |>> map Logic.dest_type;
 
-    val instT = map_filter (fn (TVar v, T) => SOME (v, T) | _ => NONE) (tvars ~~ tfrees);
-    val inst =
-      map_filter
-        (fn (Var (xi, T), t) =>
-          SOME ((xi, Term_Subst.instantiateT instT T),
-            Thm.cterm_of ctxt (Term.map_types (Term_Subst.instantiateT instT) t))
-        | _ => NONE) (vars ~~ frees);
-    val result' = Thm.instantiate (map (apsnd (Thm.ctyp_of ctxt)) instT, inst) result;
+    val instT =
+      TVars.build (fold2 (fn a => fn b =>
+        (case a of TVar v => TVars.add (v, b) | _ => I)) tvars tfrees);
+    val cinstT = TVars.map (K (Thm.ctyp_of ctxt)) instT;
+    val cinst =
+      Vars.build
+        (fold2 (fn v => fn t =>
+          (case v of
+            Var (xi, T) =>
+              Vars.add ((xi, Term_Subst.instantiateT instT T),
+                Thm.cterm_of ctxt (Term.map_types (Term_Subst.instantiateT instT) t))
+          | _ => I)) vars frees);
+    val result' = Thm.instantiate (cinstT, cinst) result;
 
     (*import assumes/defines*)
     val result'' =
@@ -400,6 +413,7 @@ fun theory_target_abbrev prmode (b, mx) global_rhs params =
             Term.list_comb (Logic.unvarify_global lhs, snd params)));
 
 
+
 (** theory operations **)
 
 val theory_abbrev = abbrev theory_target_abbrev;
@@ -416,6 +430,7 @@ fun theory_registration registration lthy =
   |> (Local_Theory.raw_theory o Context.theory_map)
     (Locale.add_registration (target_registration lthy registration))
   |> standard_registration (K true) registration;
+
 
 
 (** locale target primitives **)

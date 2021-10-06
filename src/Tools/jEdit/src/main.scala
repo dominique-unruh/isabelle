@@ -82,7 +82,7 @@ object Main
 </PERSPECTIVE>""")
           }
 
-          Scala_Project.plugin_contexts().foreach(_.build())
+          for (plugin <- Scala_Project.plugins) { plugin.context().build() }
 
 
           /* args */
@@ -133,7 +133,7 @@ object Main
           case exn: Throwable =>
             GUI.init_laf()
             GUI.dialog(null, "Isabelle", GUI.scrollable_text(Exn.message(exn)))
-            sys.exit(2)
+            sys.exit(Process_Result.RC.failure)
         }
       }
       start()

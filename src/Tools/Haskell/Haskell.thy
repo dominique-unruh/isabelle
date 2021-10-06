@@ -238,7 +238,8 @@ and \<^file>\<open>$ISABELLE_HOME/src/Pure/library.ML\<close>.
 module Isabelle.Library (
   (|>), (|->), (#>), (#->),
 
-  fold, fold_rev, single, the_single, singletonM, map_index, get_index, separate,
+  fold, fold_rev, fold_map, single, the_single, singletonM,
+  map_index, get_index, separate,
 
   StringLike, STRING (..), TEXT (..), BYTES (..),
   show_bytes, show_text,
@@ -286,6 +287,14 @@ fold f (x : xs) y = fold f xs (f x y)
 fold_rev :: (a -> b -> b) -> [a] -> b -> b
 fold_rev _ [] y = y
 fold_rev f (x : xs) y = f x (fold_rev f xs y)
+
+fold_map :: (a -> b -> (c, b)) -> [a] -> b -> ([c], b)
+fold_map _ [] y = ([], y)
+fold_map f (x : xs) y =
+  let
+    (x', y') = f x y
+    (xs', y'') = fold_map f xs y'
+  in (x' : xs', y'')
 
 single :: a -> [a]
 single x = [x]
@@ -572,11 +581,12 @@ Efficient buffer of byte strings.
 See \<^file>\<open>$ISABELLE_HOME/src/Pure/General/buffer.ML\<close>.
 -}
 
-module Isabelle.Buffer (T, empty, add, content)
+module Isabelle.Buffer (T, empty, add, content, build, build_content)
 where
 
 import qualified Isabelle.Bytes as Bytes
 import Isabelle.Bytes (Bytes)
+import Isabelle.Library
 
 
 newtype T = Buffer [Bytes]
@@ -589,6 +599,12 @@ add b (Buffer bs) = Buffer (if Bytes.null b then bs else b : bs)
 
 content :: T -> Bytes
 content (Buffer bs) = Bytes.concat (reverse bs)
+
+build :: (T -> T) -> T
+build f = f empty
+
+build_content :: (T -> T) -> Bytes
+build_content f = build f |> content
 \<close>
 
 generate_file "Isabelle/Value.hs" = \<open>
@@ -1522,7 +1538,7 @@ add_content tree =
         Text s -> Buffer.add s
 
 content_of :: Body -> Bytes
-content_of body = Buffer.empty |> fold add_content body |> Buffer.content
+content_of = Buffer.build_content . fold add_content
 
 
 {- string representation -}
@@ -1540,7 +1556,7 @@ encode_text = make_bytes . concatMap (encode_char . Bytes.char) . Bytes.unpack
 
 instance Show Tree where
   show tree =
-    Buffer.empty |> show_tree tree |> Buffer.content |> make_string
+    make_string $ Buffer.build_content (show_tree tree)
     where
       show_tree (Elem ((name, atts), [])) =
         Buffer.add "<" #> Buffer.add (show_elem name atts) #> Buffer.add "/>"
@@ -1831,7 +1847,7 @@ buffer (XML.Elem ((name, atts), ts)) =
 buffer (XML.Text s) = Buffer.add s
 
 string_of_body :: XML.Body -> Bytes
-string_of_body body = Buffer.empty |> buffer_body body |> Buffer.content
+string_of_body = Buffer.build_content . buffer_body
 
 string_of :: XML.Tree -> Bytes
 string_of = string_of_body . single
@@ -2049,7 +2065,7 @@ formatted :: T -> Bytes
 formatted = YXML.string_of_body . symbolic
 
 unformatted :: T -> Bytes
-unformatted prt = Buffer.empty |> out prt |> Buffer.content
+unformatted = Buffer.build_content . out
   where
     out (Block markup _ _ prts) =
       let (bg, en) = YXML.output_markup markup
@@ -2162,13 +2178,15 @@ module Isabelle.Name (
   Name,
   uu, uu_, aT,
   clean_index, clean, internal, skolem, is_internal, is_skolem, dest_internal, dest_skolem,
-  Context, declare, is_declared, context, make_context, variant
+  Context, declare, declare_renaming, is_declared, declared, context, make_context,
+  variant, variant_list
 )
 where
 
+import Data.Maybe (fromMaybe)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Word (Word8)
-import qualified Data.Set as Set
-import Data.Set (Set)
 import qualified Isabelle.Bytes as Bytes
 import Isabelle.Bytes (Bytes)
 import qualified Isabelle.Symbol as Symbol
@@ -2203,32 +2221,38 @@ dest_internal, dest_skolem :: Name -> Maybe Name
 dest_internal = Bytes.try_unsuffix "_"
 dest_skolem = Bytes.try_unsuffix "__"
 
-clean_index :: Name -> (Name, Int)
-clean_index x =
-  if Bytes.null x || Bytes.last x /= underscore then (x, 0)
-  else
-    let
-      rev = reverse (Bytes.unpack x)
-      n = length (takeWhile (== underscore) rev)
-      y = Bytes.pack (reverse (drop n rev))
-    in (y, n)
+clean_index :: (Name, Int) -> (Name, Int)
+clean_index (x, i) =
+  case dest_internal x of
+    Nothing -> (x, i)
+    Just x' -> clean_index (x', i + 1)
 
 clean :: Name -> Name
-clean = fst . clean_index
+clean x = fst (clean_index (x, 0))
 
 
 {- context for used names -}
 
-newtype Context = Context (Set Name)
+newtype Context = Context (Map Name (Maybe Name))  {-declared names with latest renaming-}
 
 declare :: Name -> Context -> Context
-declare x (Context names) = Context (Set.insert x names)
+declare x (Context names) =
+  Context (
+    let a = clean x
+    in if Map.member a names then names else Map.insert a Nothing names)
+
+declare_renaming :: (Name, Name) -> Context -> Context
+declare_renaming (x, x') (Context names) =
+  Context (Map.insert (clean x) (Just (clean x')) names)
 
 is_declared :: Context -> Name -> Bool
-is_declared (Context names) x = Set.member x names
+is_declared (Context names) x = Map.member x names
+
+declared :: Context -> Name -> Maybe (Maybe Name)
+declared (Context names) a = Map.lookup a names
 
 context :: Context
-context = Context (Set.fromList ["", "'"])
+context = Context Map.empty |> fold declare ["", "'"]
 
 make_context :: [Name] -> Context
 make_context used = fold declare used context
@@ -2254,13 +2278,28 @@ bump_string str =
   in Bytes.pack (part1 <> part2)
 
 variant :: Name -> Context -> (Name, Context)
-variant name names =
+variant name ctxt =
   let
-    vary bump x = if is_declared names x then bump x |> vary bump_string else x
-    (x, n) = clean_index name
-    x' = x |> vary bump_init
-    names' = declare x' names;
-  in (x' <> Bytes.pack (replicate n underscore), names')
+    vary x =
+      case declared ctxt x of
+        Nothing -> x
+        Just x' -> vary (bump_string (fromMaybe x x'))
+
+    (x, n) = clean_index (name, 0)
+    (x', ctxt') =
+      if not (is_declared ctxt x) then (x, declare x ctxt)
+      else
+        let
+          x0 = bump_init x
+          x' = vary x0
+          ctxt' = ctxt
+            |> (if x0 /= x' then declare_renaming (x0, x') else id)
+            |> declare x'
+        in (x', ctxt')
+  in (x' <> Bytes.pack (replicate n underscore), ctxt')
+
+variant_list :: [Name] -> [Name] -> [Name]
+variant_list used names = fst (make_context used |> fold_map variant names)
 \<close>
 
 generate_file "Isabelle/Term.hs" = \<open>
@@ -3511,7 +3550,7 @@ and \<^file>\<open>~~/src/Pure/System/process_result.scala\<close>
 {-# LANGUAGE OverloadedStrings #-}
 
 module Isabelle.Process_Result (
-  interrupt_rc, timeout_rc,
+  ok_rc, error_rc, failure_rc, interrupt_rc , timeout_rc,
 
   T, make, rc, out_lines, err_lines, timing, timing_elapsed, out, err, ok, check
 )
@@ -3524,10 +3563,11 @@ import Isabelle.Bytes (Bytes)
 import Isabelle.Library
 
 
-interrupt_rc :: Int
+ok_rc, error_rc, failure_rc, interrupt_rc , timeout_rc :: Int
+ok_rc = 0
+error_rc = 1
+failure_rc = 2
 interrupt_rc = 130
-
-timeout_rc :: Int
 timeout_rc = 142
 
 data T =
@@ -3563,7 +3603,7 @@ err :: T -> Bytes
 err = trim_line . cat_lines . err_lines
 
 ok :: T -> Bool
-ok result = rc result == 0
+ok result = rc result == ok_rc
 
 check :: T -> T
 check result = if ok result then result else error (make_string $ err result)

@@ -301,6 +301,7 @@
 \<preceq>               code: 0x00227c  group: relation
 \<succeq>               code: 0x00227d  group: relation
 \<parallel>             code: 0x002225  group: relation  abbrev: ||
+\<Parallel>             code: 0x002016  group: relation  abbrev: ||
 \<interleave>           code: 0x002af4  group: relation  abbrev: ||
 \<sslash>               code: 0x002afd  group: relation  abbrev: ||
 \<bar>                  code: 0x0000a6  group: punctuation  abbrev: ||
@@ -456,6 +457,8 @@
 \<^ctyp>                argument: cartouche
 \<^keyword>             argument: cartouche
 \<^locale>              argument: cartouche
+\<^make_judgment>
+\<^dest_judgment>
 \<^make_string>
 \<^method>              argument: cartouche
 \<^named_theorems>      argument: cartouche
@@ -482,11 +485,18 @@
 \<^theory_context>      argument: cartouche
 \<^tool>                argument: cartouche
 \<^try>                 argument: cartouche
+\<^tvar>                argument: cartouche
 \<^typ>                 argument: cartouche
 \<^type_abbrev>         argument: cartouche
 \<^type_name>           argument: cartouche
 \<^type_syntax>         argument: cartouche
+\<^var>                 argument: cartouche
 \<^oracle_name>         argument: cartouche
+\<^Const>               argument: cartouche
+\<^Const_>              argument: cartouche
+\<^Const_fn>            argument: cartouche
+\<^Type>                argument: cartouche
+\<^Type_fn>             argument: cartouche
 \<^code>                argument: cartouche
 \<^computation>         argument: cartouche
 \<^computation_conv>    argument: cartouche

@@ -37,7 +37,7 @@ fun dest_def ctxt {check_head, check_free_lhs, check_free_rhs, check_tfree} eq =
     val (raw_lhs, rhs) = Logic.dest_equals eq_body handle TERM _ => err "Not a meta-equality (\<equiv>)";
     val lhs = Envir.beta_eta_contract raw_lhs;
     val (head, args) = Term.strip_comb lhs;
-    val head_tfrees = Term.add_tfrees head [];
+    val head_tfrees = TFrees.build (TFrees.add_tfrees head);
 
     fun check_arg (Bound _) = true
       | check_arg (Free (x, _)) = check_free_lhs x
@@ -51,9 +51,10 @@ fun dest_def ctxt {check_head, check_free_lhs, check_free_rhs, check_tfree} eq =
     val rhs_extras = Term.fold_aterms (fn v as Free (x, _) =>
       if check_free_rhs x orelse member (op aconv) args v then I
       else insert (op aconv) v | _ => I) rhs [];
-    val rhs_extrasT = Term.fold_aterms (Term.fold_types (fn v as TFree (a, S) =>
-      if check_tfree a orelse member (op =) head_tfrees (a, S) then I
-      else insert (op =) v | _ => I)) rhs [];
+    val rhs_extrasT =
+      TFrees.build (rhs |> TFrees.add_tfrees_unless
+        (fn (a, S) => check_tfree a orelse TFrees.defined head_tfrees (a, S)))
+      |> TFrees.keys |> map TFree;
   in
     if not (check_head head) then
       err ("Bad head of lhs: " ^ term_kind head ^ display_terms [head])

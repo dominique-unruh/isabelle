@@ -17,7 +17,7 @@ session HOL (main) = Pure +
 
 session "HOL-Examples" in Examples = HOL +
   description "
-    Notable Examples in Isabelle/HOL.
+    Notable Examples for Isabelle/HOL.
   "
   sessions
     "HOL-Computational_Algebra"
@@ -639,7 +639,7 @@ session "HOL-Lattice" in Lattice = HOL +
 
 session "HOL-ex" (timing) in ex = "HOL-Number_Theory" +
   description "
-    Miscellaneous examples for Higher-Order Logic.
+    Miscellaneous examples and experiments for Isabelle/HOL.
   "
   theories
     Antiquote
@@ -669,7 +669,6 @@ session "HOL-ex" (timing) in ex = "HOL-Number_Theory" +
     Execute_Choice
     Function_Growth
     Gauge_Integration
-    Guess
     HarmonicSeries
     Hebrew
     Hex_Bin_Examples

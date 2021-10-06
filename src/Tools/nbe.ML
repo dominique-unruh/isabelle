@@ -109,7 +109,7 @@ fun lift_triv_classes_conv orig_ctxt conv ct =
         val tvars =
           Term.add_tvars (#1 (Logic.dest_equals (Logic.strip_imp_concl (Thm.prop_of thm)))) [];
         val instT = map2 (fn v => fn (_, (_, (cT, _))) => (v, cT)) tvars vs_tab;
-      in Thm.instantiate (instT, []) thm end;
+      in Thm.instantiate (TVars.make instT, Vars.empty) thm end;
     fun of_class (TFree (v, _), class) =
           the (AList.lookup (op =) ((snd o snd o the o AList.lookup (op =) vs_tab) v) class)
       | of_class (T, _) = error ("Bad type " ^ Syntax.string_of_typ ctxt T);
@@ -589,7 +589,7 @@ fun compile ignore_cache ctxt program =
 fun mk_equals ctxt lhs raw_rhs =
   let
     val ty = Thm.typ_of_cterm lhs;
-    val eq = Thm.cterm_of ctxt (Term.Const (\<^const_name>\<open>Pure.eq\<close>, ty --> ty --> propT));
+    val eq = Thm.cterm_of ctxt \<^Const>\<open>Pure.eq ty\<close>;
     val rhs = Thm.cterm_of ctxt raw_rhs;
   in Thm.mk_binop eq lhs rhs end;
 

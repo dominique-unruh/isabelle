@@ -111,7 +111,7 @@ object Isabelle_System
   def isabelle_id(root: Path = Path.ISABELLE_HOME): String =
     getetc("ISABELLE_ID", root = root) orElse Mercurial.archive_id(root) getOrElse {
       if (Mercurial.is_repository(root)) Mercurial.repository(root).parent()
-      else error("Failed to identify Isabelle distribution " + root)
+      else error("Failed to identify Isabelle distribution " + root.expand)
     }
 
   object Isabelle_Id extends Scala.Fun_String("isabelle_id")
@@ -139,7 +139,8 @@ object Isabelle_System
 
   def isabelle_name(): String = getenv_strict("ISABELLE_NAME")
 
-  def identification(): String = "Isabelle/" + isabelle_id() + isabelle_heading()
+  def identification(): String =
+    "Isabelle" + (try { "/" + isabelle_id () } catch { case ERROR(_) => "" }) + isabelle_heading()
 
 
   /** file-system operations **/

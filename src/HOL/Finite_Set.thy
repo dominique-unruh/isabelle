@@ -373,6 +373,17 @@ lemma finite_vimageD: "finite (h -` F) \<Longrightarrow> surj h \<Longrightarrow
 lemma finite_vimage_iff: "bij h \<Longrightarrow> finite (h -` F) \<longleftrightarrow> finite F"
   unfolding bij_def by (auto elim: finite_vimageD finite_vimageI)
 
+lemma finite_inverse_image_gen:
+  assumes "finite A" "inj_on f D"
+  shows "finite {j\<in>D. f j \<in> A}"
+  using finite_vimage_IntI [OF assms]
+  by (simp add: Collect_conj_eq inf_commute vimage_def)
+
+lemma finite_inverse_image:
+  assumes "finite A" "inj f"
+  shows "finite {j. f j \<in> A}"
+  using finite_inverse_image_gen [OF assms] by simp
+
 lemma finite_Collect_bex [simp]:
   assumes "finite A"
   shows "finite {x. \<exists>y\<in>A. Q x y} \<longleftrightarrow> (\<forall>y\<in>A. finite {x. Q x y})"
@@ -1601,15 +1612,20 @@ lemma card_insert_le_m1:
   using assms
   by (cases "finite y") (auto simp: card_insert_if)
 
-lemma card_Diff_singleton: "finite A \<Longrightarrow> x \<in> A \<Longrightarrow> card (A - {x}) = card A - 1"
-  by (simp add: card_Suc_Diff1 [symmetric])
+lemma card_Diff_singleton:
+  assumes "x \<in> A" shows "card (A - {x}) = card A - 1"
+proof (cases "finite A")
+  case True
+  with assms show ?thesis
+    by (simp add: card_Suc_Diff1 [symmetric])
+qed auto
 
 lemma card_Diff_singleton_if:
-  "finite A \<Longrightarrow> card (A - {x}) = (if x \<in> A then card A - 1 else card A)"
+  "card (A - {x}) = (if x \<in> A then card A - 1 else card A)"
   by (simp add: card_Diff_singleton)
 
 lemma card_Diff_insert[simp]:
-  assumes "finite A" and "a \<in> A" and "a \<notin> B"
+  assumes "a \<in> A" and "a \<notin> B"
   shows "card (A - insert a B) = card (A - B) - 1"
 proof -
   have "A - insert a B = (A - B) - {a}"
@@ -1618,8 +1634,11 @@ proof -
     using assms by (simp add: card_Diff_singleton)
 qed
 
-lemma card_insert_le: "finite A \<Longrightarrow> card A \<le> card (insert x A)"
-  by (simp add: card_insert_if)
+lemma card_insert_le: "card A \<le> card (insert x A)"
+proof (cases "finite A")
+  case True
+  then show ?thesis   by (simp add: card_insert_if)
+qed auto
 
 lemma card_Collect_less_nat[simp]: "card {i::nat. i < n} = n"
   by (induct n) (simp_all add:less_Suc_eq Collect_disj_eq)
@@ -1775,8 +1794,12 @@ next
     by (blast intro: less_trans)
 qed
 
-lemma card_Diff1_le: "finite A \<Longrightarrow> card (A - {x}) \<le> card A"
-  by (cases "x \<in> A") (simp_all add: card_Diff1_less less_imp_le)
+lemma card_Diff1_le: "card (A - {x}) \<le> card A"
+proof (cases "finite A")
+  case True
+  then show ?thesis  
+    by (cases "x \<in> A") (simp_all add: card_Diff1_less less_imp_le)
+qed auto
 
 lemma card_psubset: "finite B \<Longrightarrow> A \<subseteq> B \<Longrightarrow> card A < card B \<Longrightarrow> A < B"
   by (erule psubsetI) blast
@@ -1833,7 +1856,7 @@ qed
 
 lemma insert_partition:
   "x \<notin> F \<Longrightarrow> \<forall>c1 \<in> insert x F. \<forall>c2 \<in> insert x F. c1 \<noteq> c2 \<longrightarrow> c1 \<inter> c2 = {} \<Longrightarrow> x \<inter> \<Union>F = {}"
-  by auto  (* somewhat slow *)
+  by auto
 
 lemma finite_psubset_induct [consumes 1, case_names psubset]:
   assumes finite: "finite A"

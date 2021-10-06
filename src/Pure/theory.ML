@@ -30,6 +30,8 @@ sig
   val type_dep: string * typ list -> Defs.entry
   val add_deps: Defs.context -> string -> Defs.entry -> Defs.entry list -> theory -> theory
   val add_deps_global: string -> Defs.entry -> Defs.entry list -> theory -> theory
+  val add_deps_const: string -> theory -> theory
+  val add_deps_type: string -> theory -> theory
   val add_def: Defs.context -> bool -> bool -> binding * term -> theory -> theory
   val specify_const: (binding * typ) * mixfix -> theory -> term * theory
   val check_overloading: Proof.context -> bool -> string * typ -> unit
@@ -125,12 +127,12 @@ fun theory_markup def name id pos =
 fun init_markup (name, pos) thy =
   let
     val id = serial ();
-    val _ = Context_Position.reports_global thy [(pos, theory_markup true name id pos)];
+    val _ = Context_Position.reports_global thy [(pos, theory_markup {def = true} name id pos)];
   in map_thy (fn (_, _, axioms, defs, wrappers) => (pos, id, axioms, defs, wrappers)) thy end;
 
 fun get_markup thy =
   let val {pos, id, ...} = rep_theory thy
-  in theory_markup false (Context.theory_long_name thy) id pos end;
+  in theory_markup {def = false} (Context.theory_long_name thy) id pos end;
 
 fun check long ctxt (name, pos) =
   let
@@ -244,10 +246,10 @@ fun dependencies (context as (ctxt, _)) unchecked def description lhs rhs =
         [] => (item, map Logic.varifyT_global args)
       | vs => raise TYPE ("Illegal schematic type variable(s)", map TVar vs, []));
 
-    val lhs_vars = fold Term.add_tfreesT (snd lhs) [];
+    val lhs_vars = TFrees.build (fold TFrees.add_tfreesT (snd lhs));
     val rhs_extras =
-      fold (fn (_, args) => args |> (fold o Term.fold_atyps) (fn TFree v =>
-        if member (op =) lhs_vars v then I else insert (op =) v)) rhs [];
+      TFrees.build (rhs |> fold (fold (TFrees.add_tfreesT_unless (TFrees.defined lhs_vars)) o snd))
+      |> TFrees.keys;
     val _ =
       if null rhs_extras then ()
       else error ("Specification depends on extra type variables: " ^
@@ -269,6 +271,16 @@ fun add_deps context a raw_lhs raw_rhs thy =
 
 fun add_deps_global a x y thy =
   add_deps (Defs.global_context thy) a x y thy;
+
+fun add_deps_const c thy =
+  let val T = Logic.unvarifyT_global (Sign.the_const_type thy c);
+  in thy |> add_deps_global "" (const_dep thy (c, T)) [] end;
+
+fun add_deps_type c thy =
+  let
+    val n = Sign.arity_number thy c;
+    val args = map (fn a => TFree (a, [])) (Name.invent Name.context Name.aT n);
+  in thy |> add_deps_global "" (type_dep (c, args)) [] end
 
 fun specify_const decl thy =
   let val (t, thy') = Sign.declare_const_global decl thy;

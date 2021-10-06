@@ -550,8 +550,8 @@ fun bool_insts p (t, u) =
           Symtab.join (K or3) (tab1, tab2)
         end
     val tab = go [] p (t, u) Symtab.empty
-    fun f (a, (true, false, false)) = SOME (a, \<^const>\<open>implies\<close>)
-      | f (a, (false, true, false)) = SOME (a, \<^const>\<open>rev_implies\<close>)
+    fun f (a, (true, false, false)) = SOME (a, \<^Const>\<open>implies\<close>)
+      | f (a, (false, true, false)) = SOME (a, \<^Const>\<open>rev_implies\<close>)
       | f (a, (true, true, _))      = SOME (a, HOLogic.eq_const HOLogic.boolT)
       | f _                         = NONE
   in
@@ -575,8 +575,8 @@ fun transfer_rule_of_term ctxt equiv t =
       ((Name.clean_index (prep a, idx), \<^typ>\<open>bool \<Rightarrow> bool \<Rightarrow> bool\<close>), Thm.cterm_of ctxt' t)
   in
     thm
-    |> Thm.generalize (Symtab.make_set tfrees, Symtab.make_set (rnames @ frees)) idx
-    |> Thm.instantiate (map tinst binsts, map inst binsts)
+    |> Thm.generalize (Names.make_set tfrees, Names.make_set (rnames @ frees)) idx
+    |> Thm.instantiate (TVars.make (map tinst binsts), Vars.make (map inst binsts))
   end
 
 fun transfer_rule_of_lhs ctxt t =
@@ -596,8 +596,8 @@ fun transfer_rule_of_lhs ctxt t =
       ((Name.clean_index (prep a, idx), \<^typ>\<open>bool \<Rightarrow> bool \<Rightarrow> bool\<close>), Thm.cterm_of ctxt' t)
   in
     thm
-    |> Thm.generalize (Symtab.make_set tfrees, Symtab.make_set (rnames @ frees)) idx
-    |> Thm.instantiate (map tinst binsts, map inst binsts)
+    |> Thm.generalize (Names.make_set tfrees, Names.make_set (rnames @ frees)) idx
+    |> Thm.instantiate (TVars.make (map tinst binsts), Vars.make (map inst binsts))
   end
 
 fun eq_rules_tac ctxt eq_rules =
@@ -696,12 +696,12 @@ fun transferred ctxt extra_rules thm =
     val rules = extra_rules @ get_transfer_raw ctxt
     val eq_rules = get_relator_eq_raw ctxt
     val pre_simps = @{thms transfer_forall_eq transfer_implies_eq}
-    val thm1 = Drule.forall_intr_vars thm
+    val thm1 = Thm.forall_intr_vars thm
     val instT =
       rev (Term.add_tvars (Thm.full_prop_of thm1) [])
       |> map (fn v as ((a, _), S) => (v, Thm.ctyp_of ctxt (TFree (a, S))))
     val thm2 = thm1
-      |> Thm.instantiate (instT, [])
+      |> Thm.instantiate (TVars.make instT, Vars.empty)
       |> Raw_Simplifier.rewrite_rule ctxt pre_simps
     val ctxt' = Variable.declare_names (Thm.full_prop_of thm2) ctxt
     val rule = transfer_rule_of_lhs ctxt' (HOLogic.dest_Trueprop (Thm.concl_of thm2))
@@ -719,7 +719,7 @@ fun transferred ctxt extra_rules thm =
     |> Raw_Simplifier.rewrite_rule ctxt' post_simps
     |> Simplifier.norm_hhf ctxt'
     |> Drule.generalize
-        (Symtab.make_set (map (fst o dest_TFree o Thm.typ_of o snd) instT), Symtab.empty)
+        (Names.make_set (map (fst o dest_TFree o Thm.typ_of o snd) instT), Names.empty)
     |> Drule.zero_var_indexes
   end
 (*
@@ -731,12 +731,12 @@ fun untransferred ctxt extra_rules thm =
     val rules = extra_rules @ get_transfer_raw ctxt
     val eq_rules = get_relator_eq_raw ctxt
     val pre_simps = @{thms transfer_forall_eq transfer_implies_eq}
-    val thm1 = Drule.forall_intr_vars thm
+    val thm1 = Thm.forall_intr_vars thm
     val instT =
       rev (Term.add_tvars (Thm.full_prop_of thm1) [])
       |> map (fn v as ((a, _), S) => (v, Thm.ctyp_of ctxt (TFree (a, S))))
     val thm2 = thm1
-      |> Thm.instantiate (instT, [])
+      |> Thm.instantiate (TVars.make instT, Vars.empty)
       |> Raw_Simplifier.rewrite_rule ctxt pre_simps
     val ctxt' = Variable.declare_names (Thm.full_prop_of thm2) ctxt
     val t = HOLogic.dest_Trueprop (Thm.concl_of thm2)
@@ -755,7 +755,7 @@ fun untransferred ctxt extra_rules thm =
     |> Raw_Simplifier.rewrite_rule ctxt' post_simps
     |> Simplifier.norm_hhf ctxt'
     |> Drule.generalize
-        (Symtab.make_set (map (fst o dest_TFree o Thm.typ_of o snd) instT), Symtab.empty)
+        (Names.make_set (map (fst o dest_TFree o Thm.typ_of o snd) instT), Names.empty)
     |> Drule.zero_var_indexes
   end
 

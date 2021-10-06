@@ -1,20 +1,12 @@
 (*  Title:      Pure/term_ord.ML
-    Author:     Tobias Nipkow and Makarius, TU Muenchen
+    Author:     Tobias Nipkow, TU Muenchen
+    Author:     Makarius
 
 Term orderings.
 *)
 
-signature BASIC_TERM_ORD =
-sig
-  structure Vartab: TABLE
-  structure Sorttab: TABLE
-  structure Typtab: TABLE
-  structure Termtab: TABLE
-end;
-
 signature TERM_ORD =
 sig
-  include BASIC_TERM_ORD
   val fast_indexname_ord: indexname ord
   val sort_ord: sort ord
   val typ_ord: typ ord
@@ -26,7 +18,6 @@ sig
   val term_ord: term ord
   val hd_ord: term ord
   val term_lpo: (term -> int) -> term ord
-  val term_cache: (term -> 'a) -> term -> 'a
 end;
 
 structure Term_Ord: TERM_ORD =
@@ -34,12 +25,11 @@ struct
 
 (* fast syntactic ordering -- tuned for inequalities *)
 
-fun fast_indexname_ord ((x, i), (y, j)) =
-  (case int_ord (i, j) of EQUAL => fast_string_ord (x, y) | ord => ord);
+val fast_indexname_ord =
+  pointer_eq_ord (int_ord o apply2 snd ||| fast_string_ord o apply2 fst);
 
-fun sort_ord SS =
-  if pointer_eq SS then EQUAL
-  else dict_ord fast_string_ord SS;
+val sort_ord =
+  pointer_eq_ord (dict_ord fast_string_ord);
 
 local
 
@@ -209,23 +199,27 @@ in
 val term_lpo = term_lpo
 end;
 
-
-(* tables and caches *)
-
-structure Vartab = Table(type key = indexname val ord = fast_indexname_ord);
-structure Sorttab = Table(type key = sort val ord = sort_ord);
-structure Typtab = Table(type key = typ val ord = typ_ord);
-structure Termtab = Table(type key = term val ord = fast_term_ord);
-
-fun term_cache f = Cache.create Termtab.empty Termtab.lookup Termtab.update f;
-
 end;
 
-structure Basic_Term_Ord: BASIC_TERM_ORD = Term_Ord;
-open Basic_Term_Ord;
+
+(* scalable collections *)
+
+structure Vartab = Table(type key = indexname val ord = Term_Ord.fast_indexname_ord);
+structure Sorttab = Table(type key = sort val ord = Term_Ord.sort_ord);
+structure Typtab = Table(type key = typ val ord = Term_Ord.typ_ord);
+
+structure Termtab:
+sig
+  include TABLE;
+  val term_cache: (term -> 'a) -> term -> 'a
+end =
+struct
+  structure Table = Table(type key = term val ord = Term_Ord.fast_term_ord);
+  open Table;
+  fun term_cache f = Cache.create empty lookup update f;
+end;
 
 structure Var_Graph = Graph(type key = indexname val ord = Term_Ord.fast_indexname_ord);
 structure Sort_Graph = Graph(type key = sort val ord = Term_Ord.sort_ord);
 structure Typ_Graph = Graph(type key = typ val ord = Term_Ord.typ_ord);
 structure Term_Graph = Graph(type key = term val ord = Term_Ord.fast_term_ord);
-

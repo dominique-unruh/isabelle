@@ -61,7 +61,7 @@ fun is_nat t = (fastype_of1 t = HOLogic.natT);
 
 fun mk_nat_thm thy t =
   let val ct = Thm.global_cterm_of thy t
-  in Drule.instantiate_normalize ([], [((("n", 0), HOLogic.natT), ct)]) @{thm le0} end;
+  in Drule.instantiate_normalize (TVars.empty, Vars.make [(\<^var>\<open>?n::nat\<close>, ct)]) @{thm le0} end;
 
 end;
 

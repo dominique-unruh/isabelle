@@ -103,7 +103,7 @@ val axiom_inference = Thm.incr_indexes 1 oo lookth
 
 fun inst_excluded_middle i_atom =
   @{lemma "P \<Longrightarrow> \<not> P \<Longrightarrow> False" by (rule notE)}
-  |> instantiate_normalize ([], [((("P", 0), \<^typ>\<open>bool\<close>), i_atom)])
+  |> instantiate_normalize (TVars.empty, Vars.make [(\<^var>\<open>?P::bool\<close>, i_atom)])
 
 fun assume_inference ctxt type_enc concealed sym_tab atom =
   singleton (hol_terms_of_metis ctxt type_enc concealed sym_tab) (Metis_Term.Fn atom)
@@ -174,7 +174,7 @@ fun incr_type_indexes ctxt inc th =
     val tvs = Term.add_tvars (Thm.full_prop_of th) []
     fun inc_tvar ((a, i), s) = (((a, i), s), Thm.ctyp_of ctxt (TVar ((a, i + inc), s)))
   in
-    Thm.instantiate (map inc_tvar tvs, []) th
+    Thm.instantiate (TVars.make (map inc_tvar tvs), Vars.empty) th
   end
 
 (*Like RSN, but we rename apart only the type variables. Vars here typically
@@ -217,14 +217,14 @@ fun resolve_inc_tyvars ctxt th1 i th2 =
           again. We could do this the first time around but this error occurs seldom and we don't
           want to break existing proofs in subtle ways or slow them down.*)
         if null ps then raise TERM z
-        else res (apply2 (Drule.instantiate_normalize (ps, [])) (th1', th2))
+        else res (apply2 (Drule.instantiate_normalize (TVars.make ps, Vars.empty)) (th1', th2))
       end
   end
 
-fun s_not (\<^const>\<open>Not\<close> $ t) = t
+fun s_not \<^Const_>\<open>Not for t\<close> = t
   | s_not t = HOLogic.mk_not t
-fun simp_not_not (\<^const>\<open>Trueprop\<close> $ t) = \<^const>\<open>Trueprop\<close> $ simp_not_not t
-  | simp_not_not (\<^const>\<open>Not\<close> $ t) = s_not (simp_not_not t)
+fun simp_not_not \<^Const_>\<open>Trueprop for t\<close> = \<^Const>\<open>Trueprop for \<open>simp_not_not t\<close>\<close>
+  | simp_not_not \<^Const_>\<open>Not for t\<close> = s_not (simp_not_not t)
   | simp_not_not t = t
 
 val normalize_literal = simp_not_not o Envir.eta_contract
@@ -407,14 +407,14 @@ fun flexflex_first_order ctxt th =
         val instsT = Vartab.fold (cons o mkT) tyenv []
         val insts = Vartab.fold (cons o mk) tenv []
       in
-        Thm.instantiate (instsT, insts) th
+        Thm.instantiate (TVars.make instsT, Vars.make insts) th
       end
       handle THM _ => th)
 
 fun is_metis_literal_genuine (_, (s, _)) =
   not (String.isPrefix class_prefix (Metis_Name.toString s))
 fun is_isabelle_literal_genuine t =
-  (case t of _ $ (Const (\<^const_name>\<open>Meson.skolem\<close>, _) $ _) => false | _ => true)
+  (case t of _ $ \<^Const_>\<open>Meson.skolem _ for _\<close> => false | _ => true)
 
 fun count p xs = fold (fn x => if p x then Integer.add 1 else I) xs 0
 
@@ -574,7 +574,8 @@ fun instantiate_forall_tac ctxt t i st =
               tyenv []
           val t_inst = [apply2 (Thm.cterm_of ctxt o Envir.norm_term env) (Var var, t')]
         in
-          Drule.instantiate_normalize (ty_inst, map (apfst (dest_Var o Thm.term_of)) t_inst) th
+          Drule.instantiate_normalize
+            (TVars.make ty_inst, Vars.make (map (apfst (dest_Var o Thm.term_of)) t_inst)) th
         end
       | _ => raise Fail "expected a single non-zapped, non-Metis Var")
   in
@@ -659,11 +660,11 @@ fun discharge_skolem_premises ctxt axioms prems_imp_false =
 
       fun subst_info_of_prem subgoal_no prem =
         (case prem of
-          _ $ (Const (\<^const_name>\<open>Meson.skolem\<close>, _) $ (_ $ t $ num)) =>
-          let val ax_no = HOLogic.dest_nat num in
-            (ax_no, (subgoal_no,
-                     match_term (nth axioms ax_no |> the |> snd, t)))
-          end
+          _ $ \<^Const_>\<open>Meson.skolem _ for \<open>_ $ t $ num\<close>\<close> =>
+            let val ax_no = HOLogic.dest_nat num in
+              (ax_no, (subgoal_no,
+                       match_term (nth axioms ax_no |> the |> snd, t)))
+            end
         | _ => raise TERM ("discharge_skolem_premises: Malformed premise", [prem]))
 
       fun cluster_of_var_name skolem s =

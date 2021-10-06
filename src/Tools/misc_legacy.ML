@@ -124,10 +124,10 @@ local
     H1,...,Hn are the hypotheses;  x1...xm are variants of the parameters.
   Main difference from strip_assums concerns parameters:
     it replaces the bound variables by free variables.  *)
-fun strip_context_aux (params, Hs, Const (\<^const_name>\<open>Pure.imp\<close>, _) $ H $ B) =
+fun strip_context_aux (params, Hs, \<^Const_>\<open>Pure.imp for H B\<close>) =
       strip_context_aux (params, H :: Hs, B)
-  | strip_context_aux (params, Hs, Const (\<^const_name>\<open>Pure.all\<close>,_) $ Abs (a, T, t)) =
-      let val (b, u) = Syntax_Trans.variant_abs (a, T, t)
+  | strip_context_aux (params, Hs, \<^Const_>\<open>Pure.all _ for \<open>Abs (a, T, t)\<close>\<close>) =
+      let val (b, u) = Term.dest_abs (a, T, t)
       in strip_context_aux ((b, T) :: params, Hs, u) end
   | strip_context_aux (params, Hs, B) = (rev params, rev Hs, B);
 
@@ -185,7 +185,8 @@ fun metahyps_aux_tac ctxt tacf (prem,gno) state =
               fold Term.add_vars (Logic.strip_imp_prems prop) []
             and concl_vars = Term.add_vars (Logic.strip_imp_concl prop) []
             val subgoal_insts = map (mk_subgoal_inst concl_vars) subgoal_vars
-            val st' = Thm.instantiate ([], map mk_inst subgoal_insts) st
+            val st' =
+              Thm.instantiate (TVars.empty, Vars.build (fold (Vars.add o mk_inst) subgoal_insts)) st
             val emBs = map (Thm.cterm_of ctxt o embed) (Thm.prems_of st')
             val Cth  = implies_elim_list st' (map (elim o Thm.assume) emBs)
         in  (*restore the unknowns to the hypotheses*)
@@ -235,7 +236,7 @@ end;
 fun freeze_thaw_robust ctxt th =
  let val fth = Thm.legacy_freezeT th
  in
-   case Thm.fold_terms Term.add_vars fth [] of
+   case Thm.fold_terms {hyps = false} Term.add_vars fth [] of
        [] => (fth, fn _ => fn x => x)   (*No vars: nothing to do!*)
      | vars =>
          let fun newName (ix,_) = (ix, gensym (string_of_indexname ix))
@@ -247,7 +248,9 @@ fun freeze_thaw_robust ctxt th =
              fun thaw i th' = (*i is non-negative increment for Var indexes*)
                  th' |> forall_intr_list (map #2 insts)
                      |> forall_elim_list (map (Thm.incr_indexes_cterm i o #1) insts)
-         in  (Thm.instantiate ([], map (apfst (dest_Var o Thm.term_of)) insts) fth, thaw)  end
+         in
+           (Thm.instantiate (TVars.empty, Vars.build (fold (Vars.add o apfst (dest_Var o Thm.term_of)) insts)) fth, thaw)
+         end
  end;
 
 end;

@@ -173,7 +173,7 @@ fun parse_named_pats match_kind =
 
                   val param_thm = map (Drule.mk_term o Thm.cterm_of ctxt' o Free) abs_nms
                     |> Conjunction.intr_balanced
-                    |> Drule.generalize (Symtab.empty, Symtab.make_set (map fst abs_nms))
+                    |> Drule.generalize (Names.empty, Names.make_set (map fst abs_nms))
                     |> Thm.tag_free_dummy;
 
                   val atts = map (Attrib.attribute ctxt') att;
@@ -431,7 +431,7 @@ fun augment_focus (focus: Subgoal.focus) : (int list * Subgoal.focus) =
 
     val (prem_ids, ctxt') = context
       |> add_focus_params params
-      |> add_focus_schematics (snd schematics)
+      |> add_focus_schematics (Vars.dest (snd schematics))
       |> fold_map add_focus_prem (rev prems)
 
   in
@@ -451,13 +451,14 @@ fun focus_concl ctxt i bindings goal =
     val ({context = ctxt', concl, params, prems, asms, schematics}, goal') =
       Subgoal.focus_params ctxt i bindings goal;
 
-    val (inst, ctxt'') = Variable.import_inst true [Thm.term_of concl] ctxt';
-    val schematic_terms = map (apsnd (Thm.cterm_of ctxt'')) (#2 inst);
+    val ((_, inst), ctxt'') = Variable.import_inst true [Thm.term_of concl] ctxt';
+    val schematic_terms =
+      Vars.fold (fn (v, t) => cons (v, Thm.cterm_of ctxt'' t)) inst [];
 
-    val goal'' = Thm.instantiate ([], schematic_terms) goal';
-    val concl' = Thm.instantiate_cterm ([], schematic_terms) concl;
+    val goal'' = Thm.instantiate (TVars.empty, Vars.make schematic_terms) goal';
+    val concl' = Thm.instantiate_cterm (TVars.empty, Vars.make schematic_terms) concl;
     val (schematic_types, schematic_terms') = schematics;
-    val schematics' = (schematic_types, schematic_terms @ schematic_terms');
+    val schematics' = (schematic_types, fold Vars.add schematic_terms schematic_terms');
   in
     ({context = ctxt'', concl = concl', params = params, prems = prems,
       schematics = schematics', asms = asms} : Subgoal.focus, goal'')

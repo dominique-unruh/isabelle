@@ -8,8 +8,9 @@ interrupts.
 package isabelle
 
 
-import java.util.{LinkedList, List => JList, Map => JMap}
-import java.io.{BufferedReader, BufferedWriter, InputStreamReader, OutputStreamWriter, File => JFile}
+import java.util.{List => JList, Map => JMap}
+import java.io.{BufferedReader, BufferedWriter, InputStreamReader, OutputStreamWriter,
+  File => JFile, IOException}
 import scala.annotation.tailrec
 import scala.jdk.OptionConverters._
 
@@ -229,7 +230,7 @@ object Bash
 
       val rc =
         try { join() }
-        catch { case Exn.Interrupt() => terminate(); Process_Result.interrupt_rc }
+        catch { case Exn.Interrupt() => terminate(); Process_Result.RC.interrupt }
 
       watchdog_thread.foreach(_.cancel())
 
@@ -237,7 +238,7 @@ object Bash
       out_lines.join
       err_lines.join
 
-      if (strict && rc == Process_Result.interrupt_rc) throw Exn.Interrupt()
+      if (strict && rc == Process_Result.RC.interrupt) throw Exn.Interrupt()
 
       Process_Result(rc, out_lines.join, err_lines.join, get_timing)
     }
@@ -282,7 +283,8 @@ object Bash
     override def handle(connection: isabelle.Server.Connection): Unit =
     {
       def reply(chunks: List[String]): Unit =
-        connection.write_byte_message(chunks.map(Bytes.apply))
+        try { connection.write_byte_message(chunks.map(Bytes.apply)) }
+        catch { case _: IOException => }
 
       def reply_failure(exn: Throwable): Unit =
         reply(

@@ -114,10 +114,11 @@ fun fixate ctxt pattern ts =
         let
           val [a] = Name.invent used Name.aT 1;
           val used' = Name.declare a used;
-        in (((xi, S), TFree (a, improve_sort S)) :: inst, used') end
+        in (TVars.add ((xi, S), TFree (a, improve_sort S)) inst, used') end
       else (inst, used);
+    val params = TVars.build (fold TVars.add_tvars ts) |> TVars.list_set;
     val used = (fold o fold_types) Term.declare_typ_names ts (Variable.names_of ctxt);
-    val (inst, _) = fold_rev subst_param (fold Term.add_tvars ts []) ([], used);
+    val (inst, _) = fold subst_param params (TVars.empty, used);
   in (map o map_types) (Term_Subst.instantiateT inst) ts end;
 
 end;

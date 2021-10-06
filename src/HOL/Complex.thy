@@ -26,7 +26,6 @@ lemma complex_eqI [intro?]: "Re x = Re y \<Longrightarrow> Im x = Im y \<Longrig
 lemma complex_eq_iff: "x = y \<longleftrightarrow> Re x = Re y \<and> Im x = Im y"
   by (auto intro: complex.expand)
 
-
 subsection \<open>Addition and Subtraction\<close>
 
 instantiation complex :: ab_group_add
@@ -654,6 +653,9 @@ lemma has_vector_derivative_cnj [derivative_intros]:
 
 
 subsection \<open>Basic Lemmas\<close>
+
+lemma complex_of_real_code[code_unfold]: "of_real = (\<lambda>x. Complex x 0)" 
+  by (intro ext, auto simp: complex_eq_iff)
 
 lemma complex_eq_0: "z=0 \<longleftrightarrow> (Re z)\<^sup>2 + (Im z)\<^sup>2 = 0"
   by (metis zero_complex.sel complex_eqI sum_power2_eq_zero_iff)

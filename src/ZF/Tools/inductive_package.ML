@@ -99,7 +99,7 @@ let
 
   val z' = mk_variant"z" and X' = mk_variant"X" and w' = mk_variant"w";
 
-  fun dest_tprop (Const(\<^const_name>\<open>Trueprop\<close>,_) $ P) = P
+  fun dest_tprop \<^Const_>\<open>Trueprop for P\<close> = P
     | dest_tprop Q = error ("Ill-formed premise of introduction rule: " ^
                             Syntax.string_of_term ctxt0 Q);
 
@@ -108,14 +108,15 @@ let
     let val prems = map dest_tprop (Logic.strip_imp_prems intr)
         val dummy = List.app (fn rec_hd => List.app (Ind_Syntax.chk_prem rec_hd) prems) rec_hds
         val exfrees = subtract (op =) rec_params (Misc_Legacy.term_frees intr)
-        val zeq = FOLogic.mk_eq (Free(z', Ind_Syntax.iT), #1 (Ind_Syntax.rule_concl intr))
-    in List.foldr FOLogic.mk_exists
-             (Balanced_Tree.make FOLogic.mk_conj (zeq::prems)) exfrees
+        val zeq = FOLogic.mk_eq (Free(z', \<^Type>\<open>i\<close>), #1 (Ind_Syntax.rule_concl intr))
+    in
+      fold_rev (FOLogic.mk_exists o Term.dest_Free) exfrees
+        (Balanced_Tree.make FOLogic.mk_conj (zeq::prems))
     end;
 
   (*The Part(A,h) terms -- compose injections to make h*)
-  fun mk_Part (Bound 0) = Free(X', Ind_Syntax.iT) (*no mutual rec, no Part needed*)
-    | mk_Part h = \<^const>\<open>Part\<close> $ Free(X', Ind_Syntax.iT) $ Abs (w', Ind_Syntax.iT, h);
+  fun mk_Part (Bound 0) = Free(X', \<^Type>\<open>i\<close>) (*no mutual rec, no Part needed*)
+    | mk_Part h = \<^Const>\<open>Part\<close> $ Free(X', \<^Type>\<open>i\<close>) $ Abs (w', \<^Type>\<open>i\<close>, h);
 
   (*Access to balanced disjoint sums via injections*)
   val parts = map mk_Part
@@ -126,7 +127,7 @@ let
   val part_intrs = map (subst_free (rec_tms ~~ parts) o fp_part) intr_tms;
 
   val fp_abs =
-    absfree (X', Ind_Syntax.iT)
+    absfree (X', \<^Type>\<open>i\<close>)
         (Ind_Syntax.mk_Collect (z', dom_sum,
             Balanced_Tree.make FOLogic.mk_disj part_intrs));
 
@@ -159,7 +160,7 @@ let
          (case parts of
              [_] => []                        (*no mutual recursion*)
            | _ => rec_tms ~~          (*define the sets as Parts*)
-                  map (subst_atomic [(Free (X', Ind_Syntax.iT), big_rec_tm)]) parts));
+                  map (subst_atomic [(Free (X', \<^Type>\<open>i\<close>), big_rec_tm)]) parts));
 
   (*tracing: print the fixedpoint definition*)
   val dummy = if !Ind_Syntax.trace then
@@ -184,7 +185,7 @@ let
   val dummy = writeln "  Proving monotonicity...";
 
   val bnd_mono0 =
-    Goal.prove_global thy1 [] [] (FOLogic.mk_Trueprop (Fp.bnd_mono $ dom_sum $ fp_abs))
+    Goal.prove_global thy1 [] [] (\<^make_judgment> (Fp.bnd_mono $ dom_sum $ fp_abs))
       (fn {context = ctxt, ...} => EVERY
         [resolve_tac ctxt [@{thm Collect_subset} RS @{thm bnd_monoI}] 1,
          REPEAT (ares_tac ctxt (@{thms basic_monos} @ monos) 1)]);
@@ -297,13 +298,12 @@ let
      (*Used to make induction rules;
         ind_alist = [(rec_tm1,pred1),...] associates predicates with rec ops
         prem is a premise of an intr rule*)
-     fun add_induct_prem ind_alist (prem as Const (\<^const_name>\<open>Trueprop\<close>, _) $
-                      (Const (\<^const_name>\<open>mem\<close>, _) $ t $ X), iprems) =
+     fun add_induct_prem ind_alist (prem as \<^Const_>\<open>Trueprop for \<^Const_>\<open>mem for t X\<close>\<close>, iprems) =
           (case AList.lookup (op aconv) ind_alist X of
-               SOME pred => prem :: FOLogic.mk_Trueprop (pred $ t) :: iprems
+               SOME pred => prem :: \<^make_judgment> (pred $ t) :: iprems
              | NONE => (*possibly membership in M(rec_tm), for M monotone*)
                  let fun mk_sb (rec_tm,pred) =
-                             (rec_tm, \<^const>\<open>Collect\<close> $ rec_tm $ pred)
+                             (rec_tm, \<^Const>\<open>Collect\<close> $ rec_tm $ pred)
                  in  subst_free (map mk_sb ind_alist) prem :: iprems  end)
        | add_induct_prem ind_alist (prem,iprems) = prem :: iprems;
 
@@ -314,7 +314,7 @@ let
                               (Logic.strip_imp_prems intr)
            val (t,X) = Ind_Syntax.rule_concl intr
            val (SOME pred) = AList.lookup (op aconv) ind_alist X
-           val concl = FOLogic.mk_Trueprop (pred $ t)
+           val concl = \<^make_judgment> (pred $ t)
        in fold_rev Logic.all xs (Logic.list_implies (iprems,concl)) end
        handle Bind => error"Recursion term not found in conclusion";
 
@@ -324,7 +324,7 @@ let
        | ind_tac ctxt (prem::prems) i =
              DEPTH_SOLVE_1 (ares_tac ctxt [prem, @{thm refl}] i) THEN ind_tac ctxt prems (i-1);
 
-     val pred = Free(pred_name, Ind_Syntax.iT --> FOLogic.oT);
+     val pred = Free(pred_name, \<^Type>\<open>i\<close> --> \<^Type>\<open>o\<close>);
 
      val ind_prems = map (induct_prem (map (rpair pred) rec_tms))
                          intr_tms;
@@ -349,7 +349,7 @@ let
 
      val quant_induct =
        Goal.prove_global thy4 [] ind_prems
-         (FOLogic.mk_Trueprop (Ind_Syntax.mk_all_imp (big_rec_tm, pred)))
+         (\<^make_judgment> (Ind_Syntax.mk_all_imp (big_rec_tm, pred)))
          (fn {context = ctxt, prems} => EVERY
            [rewrite_goals_tac ctxt part_rec_defs,
             resolve_tac ctxt [@{thm impI} RS @{thm allI}] 1,
@@ -388,13 +388,11 @@ let
      fun mk_predpair rec_tm =
        let val rec_name = (#1 o dest_Const o head_of) rec_tm
            val pfree = Free(pred_name ^ "_" ^ Long_Name.base_name rec_name,
-                            elem_factors ---> FOLogic.oT)
+                            elem_factors ---> \<^Type>\<open>o\<close>)
            val qconcl =
-             List.foldr FOLogic.mk_all
-               (FOLogic.imp $
-                (\<^const>\<open>mem\<close> $ elem_tuple $ rec_tm)
-                      $ (list_comb (pfree, elem_frees))) elem_frees
-       in  (CP.ap_split elem_type FOLogic.oT pfree,
+             fold_rev (FOLogic.mk_all o Term.dest_Free) elem_frees
+               \<^Const>\<open>imp for \<^Const>\<open>mem for elem_tuple rec_tm\<close> \<open>list_comb (pfree, elem_frees)\<close>\<close>
+       in  (CP.ap_split elem_type \<^Type>\<open>o\<close> pfree,
             qconcl)
        end;
 
@@ -402,19 +400,18 @@ let
 
      (*Used to form simultaneous induction lemma*)
      fun mk_rec_imp (rec_tm,pred) =
-         FOLogic.imp $ (\<^const>\<open>mem\<close> $ Bound 0 $ rec_tm) $
-                          (pred $ Bound 0);
+         \<^Const>\<open>imp for \<^Const>\<open>mem for \<open>Bound 0\<close> rec_tm\<close> \<open>pred $ Bound 0\<close>\<close>;
 
      (*To instantiate the main induction rule*)
      val induct_concl =
-         FOLogic.mk_Trueprop
+         \<^make_judgment>
            (Ind_Syntax.mk_all_imp
             (big_rec_tm,
-             Abs("z", Ind_Syntax.iT,
+             Abs("z", \<^Type>\<open>i\<close>,
                  Balanced_Tree.make FOLogic.mk_conj
                  (ListPair.map mk_rec_imp (rec_tms, preds)))))
      and mutual_induct_concl =
-      FOLogic.mk_Trueprop (Balanced_Tree.make FOLogic.mk_conj qconcls);
+       \<^make_judgment> (Balanced_Tree.make FOLogic.mk_conj qconcls);
 
      val dummy = if !Ind_Syntax.trace then
                  (writeln ("induct_concl = " ^
@@ -508,17 +505,17 @@ let
        The name "x.1" comes from the "RS spec" !*)
      val inst =
          case elem_frees of [_] => I
-            | _ => Drule.instantiate_normalize ([], [(((("x",1), Ind_Syntax.iT)),
-                                      Thm.global_cterm_of thy4 elem_tuple)]);
+            | _ => Drule.instantiate_normalize (TVars.empty,
+                    Vars.make [(\<^var>\<open>?x1::i\<close>, Thm.global_cterm_of thy4 elem_tuple)]);
 
      (*strip quantifier and the implication*)
      val induct0 = inst (quant_induct RS @{thm spec} RSN (2, @{thm rev_mp}));
 
-     val Const (\<^const_name>\<open>Trueprop\<close>, _) $ (pred_var $ _) = Thm.concl_of induct0
+     val \<^Const_>\<open>Trueprop for \<open>pred_var $ _\<close>\<close> = Thm.concl_of induct0
 
      val induct0 =
        CP.split_rule_var ctxt4
-        (pred_var, elem_type-->FOLogic.oT, induct0)
+        (pred_var, elem_type --> \<^Type>\<open>o\<close>, induct0)
        |> Drule.export_without_context
      and mutual_induct = CP.remove_split ctxt4 mutual_induct_fsplit
 
@@ -567,7 +564,7 @@ fun add_inductive (srec_tms, sdom_sum) intr_srcs
     (raw_monos, raw_con_defs, raw_type_intrs, raw_type_elims) thy =
   let
     val ctxt = Proof_Context.init_global thy;
-    val read_terms = map (Syntax.parse_term ctxt #> Type.constraint Ind_Syntax.iT)
+    val read_terms = map (Syntax.parse_term ctxt #> Type.constraint \<^Type>\<open>i\<close>)
       #> Syntax.check_terms ctxt;
 
     val intr_atts = map (map (Attrib.attribute_cmd ctxt) o snd) intr_srcs;

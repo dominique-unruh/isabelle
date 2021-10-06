@@ -860,17 +860,19 @@ local
   fun substitutable_monomial fvs tm =
     (case Thm.term_of tm of
       Free (_, \<^typ>\<open>real\<close>) =>
-        if not (member (op aconvc) fvs tm) then (@1, tm)
+        if not (Cterms.defined fvs tm) then (@1, tm)
         else raise Failure "substitutable_monomial"
     | \<^term>\<open>(*) :: real \<Rightarrow> _\<close> $ _ $ (Free _) =>
         if RealArith.is_ratconst (Thm.dest_arg1 tm) andalso
-          not (member (op aconvc) fvs (Thm.dest_arg tm))
+          not (Cterms.defined fvs (Thm.dest_arg tm))
         then (RealArith.dest_ratconst (Thm.dest_arg1 tm), Thm.dest_arg tm)
         else raise Failure "substitutable_monomial"
     | \<^term>\<open>(+) :: real \<Rightarrow> _\<close>$_$_ =>
-         (substitutable_monomial (Drule.cterm_add_frees (Thm.dest_arg tm) fvs) (Thm.dest_arg1 tm)
+         (substitutable_monomial (Drule.add_frees_cterm (Thm.dest_arg tm) fvs)
+           (Thm.dest_arg1 tm)
            handle Failure _ =>
-            substitutable_monomial (Drule.cterm_add_frees (Thm.dest_arg1 tm) fvs) (Thm.dest_arg tm))
+            substitutable_monomial (Drule.add_frees_cterm (Thm.dest_arg1 tm) fvs)
+              (Thm.dest_arg tm))
     | _ => raise Failure "substitutable_monomial")
 
   fun isolate_variable v th =
@@ -896,7 +898,7 @@ fun real_nonlinear_subst_prover prover ctxt =
 
     fun make_substitution th =
       let
-        val (c,v) = substitutable_monomial [] (Thm.dest_arg1(concl th))
+        val (c,v) = substitutable_monomial Cterms.empty (Thm.dest_arg1(concl th))
         val th1 =
           Drule.arg_cong_rule
             (Thm.apply \<^cterm>\<open>(*) :: real \<Rightarrow> _\<close> (RealArith.cterm_of_rat (Rat.inv c)))

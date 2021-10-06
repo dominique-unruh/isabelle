@@ -31,16 +31,16 @@ fun drop_fact_warning ctxt =
 (** instantiate elimination rules **)
 
 local
-  val (cpfalse, cfalse) = `SMT_Util.mk_cprop (Thm.cterm_of \<^context> \<^const>\<open>False\<close>)
+  val (cpfalse, cfalse) = `SMT_Util.mk_cprop \<^cterm>\<open>False\<close>
 
   fun inst f ct thm =
     let val cv = f (Drule.strip_imp_concl (Thm.cprop_of thm))
-    in Thm.instantiate ([], [(dest_Var (Thm.term_of cv), ct)]) thm end
+    in Thm.instantiate (TVars.empty, Vars.make [(dest_Var (Thm.term_of cv), ct)]) thm end
 in
 
 fun instantiate_elim thm =
   (case Thm.concl_of thm of
-    \<^const>\<open>Trueprop\<close> $ Var (_, \<^typ>\<open>bool\<close>) => inst Thm.dest_arg cfalse thm
+    \<^Const_>\<open>Trueprop for \<open>Var (_, \<^Type>\<open>bool\<close>)\<close>\<close> => inst Thm.dest_arg cfalse thm
   | Var _ => inst I cpfalse thm
   | _ => thm)
 
@@ -51,9 +51,8 @@ end
 
 fun norm_def thm =
   (case Thm.prop_of thm of
-    \<^const>\<open>Trueprop\<close> $ (Const (\<^const_name>\<open>HOL.eq\<close>, _) $ _ $ Abs _) =>
-      norm_def (thm RS @{thm fun_cong})
-  | Const (\<^const_name>\<open>Pure.eq\<close>, _) $ _ $ Abs _ => norm_def (HOLogic.mk_obj_eq thm)
+    \<^Const_>\<open>Trueprop for \<^Const>\<open>HOL.eq _ for _ \<open>Abs _\<close>\<close>\<close> => norm_def (thm RS @{thm fun_cong})
+  | \<^Const_>\<open>Pure.eq _ for _ \<open>Abs _\<close>\<close> => norm_def (HOLogic.mk_obj_eq thm)
   | _ => thm)
 
 
@@ -61,11 +60,11 @@ fun norm_def thm =
 
 fun atomize_conv ctxt ct =
   (case Thm.term_of ct of
-    \<^const>\<open>Pure.imp\<close> $ _ $ _ =>
+    \<^Const_>\<open>Pure.imp for _ _\<close> =>
       Conv.binop_conv (atomize_conv ctxt) then_conv Conv.rewr_conv @{thm atomize_imp}
-  | Const (\<^const_name>\<open>Pure.eq\<close>, _) $ _ $ _ =>
+  | \<^Const_>\<open>Pure.eq _ for _ _\<close> =>
       Conv.binop_conv (atomize_conv ctxt) then_conv Conv.rewr_conv @{thm atomize_eq}
-  | Const (\<^const_name>\<open>Pure.all\<close>, _) $ Abs _ =>
+  | \<^Const_>\<open>Pure.all _ for \<open>Abs _\<close>\<close> =>
       Conv.binder_conv (atomize_conv o snd) ctxt then_conv Conv.rewr_conv @{thm atomize_all}
   | _ => Conv.all_conv) ct
   handle CTERM _ => Conv.all_conv ct
@@ -120,9 +119,9 @@ local
 
   fun proper_quant inside f t =
     (case t of
-      Const (\<^const_name>\<open>All\<close>, _) $ Abs (_, _, u) => proper_quant true f u
-    | Const (\<^const_name>\<open>Ex\<close>, _) $ Abs (_, _, u) => proper_quant true f u
-    | \<^const>\<open>trigger\<close> $ p $ u =>
+      \<^Const_>\<open>All _ for \<open>Abs (_, _, u)\<close>\<close> => proper_quant true f u
+    | \<^Const_>\<open>Ex _ for \<open>Abs (_, _, u)\<close>\<close> => proper_quant true f u
+    | \<^Const_>\<open>trigger for p u\<close> =>
         (if inside then f p else false) andalso proper_quant false f u
     | Abs (_, _, u) => proper_quant false f u
     | u1 $ u2 => proper_quant false f u1 andalso proper_quant false f u2
@@ -142,7 +141,7 @@ local
   fun dest_cond_eq ct =
     (case Thm.term_of ct of
       Const (\<^const_name>\<open>HOL.eq\<close>, _) $ _ $ _ => Thm.dest_binop ct
-    | \<^const>\<open>HOL.implies\<close> $ _ $ _ => dest_cond_eq (Thm.dest_arg ct)
+    | \<^Const_>\<open>implies for _ _\<close> => dest_cond_eq (Thm.dest_arg ct)
     | _ => raise CTERM ("no equation", [ct]))
 
   fun get_constrs thy (Type (n, _)) = these (BNF_LFP_Compat.get_constrs thy n)
@@ -203,7 +202,7 @@ local
         let
           val (ctr, cp) = Thm.dest_binop (Thm.rhs_of trigger_eq) ||> rpair ct
           val inst = map (apfst (dest_Var o Thm.term_of)) [cp, (ctr, mk_trigger ctss)]
-        in Thm.instantiate ([], inst) trigger_eq end
+        in Thm.instantiate (TVars.empty, Vars.make inst) trigger_eq end
 
   fun infer_trigger_eq_conv outer_ctxt (ctxt, cvs) ct =
     let
@@ -220,7 +219,7 @@ local
 
     in insert_trigger_conv (filter_mpats (get_mpats lhs)) ct end
 
-  fun has_trigger (\<^const>\<open>trigger\<close> $ _ $ _) = true
+  fun has_trigger \<^Const_>\<open>trigger for _ _\<close> = true
     | has_trigger _ = false
 
   fun try_trigger_conv cv ct =
@@ -255,7 +254,7 @@ fun gen_normalize1 ctxt =
   instantiate_elim #>
   norm_def #>
   Conv.fconv_rule (Thm.beta_conversion true then_conv Thm.eta_conversion) #>
-  Drule.forall_intr_vars #>
+  Thm.forall_intr_vars #>
   Conv.fconv_rule (gen_normalize1_conv ctxt) #>
   (* Z3 4.3.1 silently normalizes "P --> Q --> R" to "P & Q --> R" *)
   Raw_Simplifier.rewrite_rule ctxt @{thms HOL.imp_conjL[symmetric, THEN eq_reflection]}
@@ -331,12 +330,12 @@ end
 
 local
   val simple_nat_ops = [
-    @{const HOL.eq (nat)}, @{const less (nat)}, @{const less_eq (nat)},
-    \<^const>\<open>Suc\<close>, @{const plus (nat)}, @{const minus (nat)}]
+    \<^Const>\<open>HOL.eq \<^Type>\<open>nat\<close>\<close>, \<^Const>\<open>less \<^Type>\<open>nat\<close>\<close>, \<^Const>\<open>less_eq \<^Type>\<open>nat\<close>\<close>,
+    \<^Const>\<open>Suc\<close>, \<^Const>\<open>plus \<^Type>\<open>nat\<close>\<close>, \<^Const>\<open>minus \<^Type>\<open>nat\<close>\<close>]
 
   val nat_consts = simple_nat_ops @
-    [@{const numeral (nat)}, @{const zero_class.zero (nat)}, @{const one_class.one (nat)}] @
-    [@{const times (nat)}, @{const divide (nat)}, @{const modulo (nat)}]
+    [\<^Const>\<open>numeral \<^Type>\<open>nat\<close>\<close>, \<^Const>\<open>zero_class.zero \<^Type>\<open>nat\<close>\<close>, \<^Const>\<open>one_class.one \<^Type>\<open>nat\<close>\<close>] @
+    [\<^Const>\<open>times \<^Type>\<open>nat\<close>\<close>, \<^Const>\<open>divide \<^Type>\<open>nat\<close>\<close>, \<^Const>\<open>modulo \<^Type>\<open>nat\<close>\<close>]
 
   val is_nat_const = member (op aconv) nat_consts
 
@@ -349,10 +348,10 @@ local
 
   fun int_ops_conv cv ctxt ct =
     (case Thm.term_of ct of
-      @{const of_nat (int)} $ (Const (\<^const_name>\<open>If\<close>, _) $ _ $ _ $ _) =>
+      \<^Const_>\<open>of_nat \<^Type>\<open>int\<close> for \<open>\<^Const_>\<open>If _ for _ _ _\<close>\<close>\<close> =>
         Conv.rewr_conv int_if_thm then_conv
         if_conv (cv ctxt) (int_ops_conv cv ctxt)
-    | @{const of_nat (int)} $ _ =>
+    | \<^Const>\<open>of_nat \<^Type>\<open>int\<close> for _\<close> =>
         (Conv.rewrs_conv int_ops_thms then_conv
           Conv.top_sweep_conv (int_ops_conv cv) ctxt) else_conv
         Conv.arg_conv (Conv.sub_conv cv ctxt)
@@ -372,7 +371,7 @@ local
 
   fun add_int_of_nat vs ct cu (q, cts) =
     (case Thm.term_of ct of
-      @{const of_nat(int)} =>
+      \<^Const>\<open>of_nat \<^Type>\<open>int\<close>\<close> =>
         if Term.exists_subterm (member (op aconv) vs) (Thm.term_of cu) then (true, cts)
         else (q, insert (op aconvc) cu cts)
     | _ => (q, cts))
@@ -402,7 +401,7 @@ fun add_int_of_nat_constraints thms =
   let val (q, cts) = fold (add_apps add_int_of_nat [] o Thm.cprop_of) thms (false, [])
   in
     if q then (thms, nat_int_thms)
-    else (thms, map (fn ct => Thm.instantiate ([], [(var, ct)]) int_thm) cts)
+    else (thms, map (fn ct => Thm.instantiate (TVars.empty, Vars.make [(var, ct)]) int_thm) cts)
   end
 
 val setup_nat_as_int =
@@ -490,7 +489,7 @@ local
 
   val schematic_consts_of =
     let
-      fun collect (\<^const>\<open>trigger\<close> $ p $ t) = collect_trigger p #> collect t
+      fun collect \<^Const_>\<open>trigger for p t\<close> = collect_trigger p #> collect t
         | collect (t $ u) = collect t #> collect u
         | collect (Abs (_, _, t)) = collect t
         | collect (t as Const (n, _)) =

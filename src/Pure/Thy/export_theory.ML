@@ -6,12 +6,36 @@ Export foundational theory content and locale/class structure.
 
 signature EXPORT_THEORY =
 sig
+  val other_name_space: (theory -> Name_Space.T) -> theory -> theory
   val export_enabled: Thy_Info.presentation_context -> bool
   val export_body: theory -> string -> XML.body -> unit
 end;
 
 structure Export_Theory: EXPORT_THEORY =
 struct
+
+(* other name spaces *)
+
+fun err_dup_kind kind = error ("Duplicate name space kind " ^ quote kind);
+
+structure Data = Theory_Data
+(
+  type T = (theory -> Name_Space.T) Inttab.table;
+  val empty = Inttab.empty;
+  val extend = I;
+  val merge = Inttab.merge (K true);
+);
+
+val other_name_spaces = map #2 o Inttab.dest o Data.get;
+fun other_name_space get_space thy = Data.map (Inttab.update (serial (), get_space)) thy;
+
+val _ = Theory.setup
+ (other_name_space Thm.oracle_space #>
+  other_name_space Global_Theory.fact_space #>
+  other_name_space (Bundle.bundle_space o Context.Theory) #>
+  other_name_space (Attrib.attribute_space o Context.Theory) #>
+  other_name_space (Method.method_space o Context.Theory));
+
 
 (* approximative syntax *)
 
@@ -78,7 +102,7 @@ fun locale_content thy loc =
           SOME goal => Thm.prems_of goal
         | NONE => raise Fail ("Cannot unfold locale " ^ quote loc))
       end;
-    val typargs = rev (fold Term.add_tfrees (map (Free o #1) args @ axioms) []);
+    val typargs = build_rev (fold Term.add_tfrees (map (Free o #1) args @ axioms));
   in {typargs = typargs, args = args, axioms = axioms} end;
 
 fun get_locales thy =
@@ -115,7 +139,7 @@ fun export_enabled (context: Thy_Info.presentation_context) =
 
 fun export_body thy name body =
   if XML.is_empty_body body then ()
-  else Export.export thy (Path.binding0 (Path.make ["theory", name])) body;
+  else Export.export thy (Path.binding0 (Path.make ("theory" :: space_explode "/" name))) body;
 
 val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
   let
@@ -148,8 +172,8 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
        {props = pos_properties pos,
         name = name,
         rough_classification = rough_classification,
-        typargs = rev (fold Term.add_tfrees spec []),
-        args = rev (fold Term.add_frees spec []),
+        typargs = build_rev (fold Term.add_tfrees spec),
+        args = build_rev (fold Term.add_frees spec),
         terms = map (fn t => (t, Term.type_of t)) (take (length terms) spec),
         rules = drop (length terms) spec}
       end;
@@ -172,7 +196,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
         val parent_spaces = map get_space parents;
         val space = get_space thy;
       in
-        (decls, []) |-> fold (fn (name, decl) =>
+        build (decls |> fold (fn (name, decl) =>
           if exists (fn space => Name_Space.declared space name) parent_spaces then I
           else
             (case export name decl of
@@ -181,7 +205,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
                 let
                   val i = #serial (Name_Space.the_entry space name);
                   val body = if enabled then make_body () else [];
-                in cons (i, XML.Elem (entity_markup space name, body)) end))
+                in cons (i, XML.Elem (entity_markup space name, body)) end)))
         |> sort (int_ord o apply2 #1) |> map #2
         |> export_body thy export_name
       end;
@@ -271,7 +295,7 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
 
     fun entity_markup_thm (serial, (name, i)) =
       let
-        val space = Facts.space_of (Global_Theory.facts_of thy);
+        val space = Global_Theory.fact_space thy;
         val xname = Name_Space.extern_shortest thy_ctxt space name;
         val {pos, ...} = Name_Space.the_entry space name;
       in make_entity_markup (Thm_Name.print (name, i)) (Thm_Name.print (xname, i)) pos serial end;
@@ -432,6 +456,25 @@ val _ = (Theory.setup o Thy_Info.add_presentation) (fn context => fn thy =>
         | spec_rules =>
             export_body thy "spec_rules" (encode_specs (map spec_rule_content spec_rules)))
       else ();
+
+
+    (* other entities *)
+
+    fun export_other get_space =
+      let
+        val space = get_space thy;
+        val export_name = "other/" ^ Name_Space.kind_of space;
+        val decls = Name_Space.get_names space |> map (rpair ());
+      in export_entities export_name get_space decls (fn _ => fn () => SOME (K [])) end;
+
+    val other_spaces = other_name_spaces thy;
+    val other_kinds = map (fn get_space => Name_Space.kind_of (get_space thy)) other_spaces;
+    val _ =
+      if null other_kinds then ()
+      else
+        Export.export thy \<^path_binding>\<open>theory/other_kinds\<close>
+          (XML.Encode.string (cat_lines other_kinds));
+    val _ = List.app export_other other_spaces;
 
   in () end);
 

@@ -155,6 +155,11 @@ sig
   val apply_case: Rule_Cases.T -> Proof.context -> (string * term list) list * Proof.context
   val check_case: Proof.context -> bool ->
     string * Position.T -> binding option list -> Rule_Cases.T
+  val check_syntax_const: Proof.context -> string * Position.T -> string
+  val syntax: bool -> Syntax.mode -> (string * typ * mixfix) list ->
+    Proof.context -> Proof.context
+  val generic_syntax: bool -> Syntax.mode -> (string * typ * mixfix) list ->
+    Context.generic -> Context.generic
   val type_notation: bool -> Syntax.mode -> (typ * mixfix) list -> Proof.context -> Proof.context
   val notation: bool -> Syntax.mode -> (term * mixfix) list -> Proof.context -> Proof.context
   val generic_type_notation: bool -> Syntax.mode -> (typ * mixfix) list -> morphism ->
@@ -724,10 +729,10 @@ fun prepare_sorts_env ctxt tys =
       end;
 
     val env =
-      (fold o fold_atyps)
+      Vartab.build (tys |> (fold o fold_atyps)
         (fn TFree (x, S) => constraint ((x, ~1), S)
           | TVar v => constraint v
-          | _ => I) tys Vartab.empty;
+          | _ => I));
 
     fun get_sort xi raw_S =
       if xi = dummy_var then
@@ -1123,6 +1128,20 @@ val cert_var = prep_var cert_typ true;
 end;
 
 
+(* syntax *)
+
+fun check_syntax_const ctxt (c, pos) =
+  if is_some (Syntax.lookup_const (syn_of ctxt) c) then c
+  else error ("Unknown syntax const: " ^ quote c ^ Position.here pos);
+
+fun syntax add mode args ctxt =
+  let val args' = map (pair Local_Syntax.Const) args
+  in ctxt |> map_syntax (#2 o Local_Syntax.update_modesyntax ctxt add mode args') end;
+
+fun generic_syntax add mode args =
+  Context.mapping (Sign.syntax add mode args) (syntax add mode args);
+
+
 (* notation *)
 
 local
@@ -1138,9 +1157,9 @@ fun const_syntax _ (Free (x, T), mx) = SOME (Local_Syntax.Fixed, (x, T, mx))
       | NONE => NONE)
   | const_syntax _ _ = NONE;
 
-fun gen_notation syntax add mode args ctxt =
+fun gen_notation make_syntax add mode args ctxt =
   ctxt |> map_syntax_idents
-    (Local_Syntax.update_modesyntax ctxt add mode (map_filter (syntax ctxt) args));
+    (Local_Syntax.update_modesyntax ctxt add mode (map_filter (make_syntax ctxt) args));
 
 in
 
@@ -1269,8 +1288,8 @@ fun dest_cases prev_ctxt ctxt =
         NONE => Inttab.empty
       | SOME ctxt0 =>
           let val cases0 = cases_of ctxt0 in
-            Name_Space.fold_table (fn (a, _) => Inttab.insert_set (serial_of cases0 a))
-              cases0 Inttab.empty
+            Inttab.build (cases0 |> Name_Space.fold_table (fn (a, _) =>
+              Inttab.insert_set (serial_of cases0 a)))
           end);
      val cases = cases_of ctxt;
   in

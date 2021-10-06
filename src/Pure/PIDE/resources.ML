@@ -118,8 +118,8 @@ fun init_session
     (fn _ =>
       ({session_positions = sort_by #1 (map (apsnd make_entry) session_positions),
         session_directories =
-          fold_rev (fn (dir, name) => Symtab.cons_list (name, Path.explode dir))
-            session_directories Symtab.empty,
+          Symtab.build (session_directories |> fold_rev (fn (dir, name) =>
+            Symtab.cons_list (name, Path.explode dir))),
         session_chapters = Symtab.make session_chapters,
         bibtex_entries = Symtab.make bibtex_entries,
         timings = make_timings command_timings,
@@ -168,7 +168,7 @@ fun loaded_theory a = Symtab.defined (get_session_base2 #loaded_theories) a;
 fun check_session ctxt arg =
   Completion.check_item "session"
     (fn (name, {pos, serial}) =>
-      Position.make_entity_markup false serial Markup.sessionN (name, pos))
+      Position.make_entity_markup {def = false} serial Markup.sessionN (name, pos))
     (get_session_base1 #session_positions) ctxt arg;
 
 fun session_chapter name =

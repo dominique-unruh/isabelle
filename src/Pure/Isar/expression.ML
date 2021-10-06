@@ -187,13 +187,15 @@ fun inst_morphism params ((prfx, mandatory), insts') ctxt =
 
     (* instantiation *)
     val instT =
-      (type_parms ~~ map Logic.dest_type type_parms'')
-      |> map_filter (fn (v, T) => if TFree v = T then NONE else SOME (v, T));
+      TFrees.build
+        (fold2 (fn v => fn T => not (TFree v = T) ? TFrees.add (v, T))
+          type_parms (map Logic.dest_type type_parms''));
     val cert_inst =
-      ((map #1 params ~~ map (Term_Subst.instantiateT_frees instT) parm_types) ~~ insts'')
-      |> map_filter (fn (v, t) => if Free v = t then NONE else SOME (v, cert t));
+      Frees.build
+        (fold2 (fn v => fn t => not (Free v = t) ? Frees.add (v, cert t))
+          (map #1 params ~~ map (Term_Subst.instantiateT_frees instT) parm_types) insts'');
   in
-    (Element.instantiate_normalize_morphism (map (apsnd certT) instT, cert_inst) $>
+    (Element.instantiate_normalize_morphism (TFrees.map (K certT) instT, cert_inst) $>
       Morphism.binding_morphism "Expression.inst" (Binding.prefix mandatory prfx), ctxt')
   end;
 
@@ -571,7 +573,7 @@ end;
 
 val norm_term = Envir.beta_norm oo Term.subst_atomic;
 
-fun bind_def ctxt eq (xs, env, eqs) =
+fun bind_def ctxt eq (env, eqs) =
   let
     val _ = Local_Defs.cert_def ctxt (K []) eq;
     val ((y, T), b) = Local_Defs.abs_def eq;
@@ -579,9 +581,9 @@ fun bind_def ctxt eq (xs, env, eqs) =
     fun err msg = error (msg ^ ": " ^ quote y);
   in
     (case filter (fn (Free (y', _), _) => y = y' | _ => false) env of
-      [] => (Term.add_frees b' xs, (Free (y, T), b') :: env, eq :: eqs)
+      [] => ((Free (y, T), b') :: env, eq :: eqs)
     | dups =>
-        if forall (fn (_, b'') => b' aconv b'') dups then (xs, env, eqs)
+        if forall (fn (_, b'') => b' aconv b'') dups then (env, eqs)
         else err "Attempt to redefine variable")
   end;
 
@@ -603,14 +605,14 @@ fun bind_def ctxt eq (xs, env, eqs) =
 fun eval_text _ _ (Fixes _) text = text
   | eval_text _ _ (Constrains _) text = text
   | eval_text _ is_ext (Assumes asms)
-        (((exts, exts'), (ints, ints')), (xs, env, defs)) =
+        (((exts, exts'), (ints, ints')), (env, defs)) =
       let
         val ts = maps (map #1 o #2) asms;
         val ts' = map (norm_term env) ts;
         val spec' =
           if is_ext then ((exts @ ts, exts' @ ts'), (ints, ints'))
           else ((exts, exts'), (ints @ ts, ints' @ ts'));
-      in (spec', (fold Term.add_frees ts' xs, env, defs)) end
+      in (spec', (env, defs)) end
   | eval_text ctxt _ (Defines defs) (spec, binds) =
       (spec, fold (bind_def ctxt o #1 o #2) defs binds)
   | eval_text _ _ (Notes _) text = text
@@ -638,8 +640,8 @@ fun eval_elem ctxt elem text =
 
 fun eval ctxt deps elems =
   let
-    val text' = fold (eval_inst ctxt) deps ((([], []), ([], [])), ([], [], []));
-    val ((spec, (_, _, defs))) = fold (eval_elem ctxt) elems text';
+    val text' = fold (eval_inst ctxt) deps ((([], []), ([], [])), ([], []));
+    val ((spec, (_, defs))) = fold (eval_elem ctxt) elems text';
   in (spec, defs) end;
 
 (* axiomsN: name of theorem set with destruct rules for locale predicates,
@@ -692,15 +694,16 @@ fun def_pred binding parms defs ts norm_ts thy =
     val thy_ctxt = Proof_Context.init_global thy;
 
     val (body, bodyT, body_eq) = atomize_spec thy_ctxt norm_ts;
-    val env = Term.add_free_names body [];
-    val xs = filter (member (op =) env o #1) parms;
+    val env = Names.build (Names.add_free_names body);
+    val xs = filter (Names.defined env o #1) parms;
     val Ts = map #2 xs;
-    val extraTs =
-      (subtract (op =) (fold Term.add_tfreesT Ts []) (Term.add_tfrees body []))
-      |> sort_by #1 |> map TFree;
-    val predT = map Term.itselfT extraTs ---> Ts ---> bodyT;
+    val type_tfrees = TFrees.build (fold TFrees.add_tfreesT Ts);
+    val extra_tfrees =
+      TFrees.build (TFrees.add_tfrees_unless (TFrees.defined type_tfrees) body)
+      |> TFrees.keys |> map TFree;
+    val predT = map Term.itselfT extra_tfrees ---> Ts ---> bodyT;
 
-    val args = map Logic.mk_type extraTs @ map Free xs;
+    val args = map Logic.mk_type extra_tfrees @ map Free xs;
     val head = Term.list_comb (Const (name, predT), args);
     val statement = Object_Logic.ensure_propT thy_ctxt head;
 
@@ -812,15 +815,15 @@ fun gen_add_locale prep_include prep_decl
       |> prep_decl raw_import I raw_body;
     val text as (((_, exts'), _), defs) = eval ctxt' deps body_elems;
 
-    val extraTs =
-      subtract (op =)
-        (fold Term.add_tfreesT (map snd parms) [])
-        (fold Term.add_tfrees exts' []);
+    val type_tfrees = TFrees.build (fold (TFrees.add_tfreesT o #2) parms);
+    val extra_tfrees =
+      TFrees.build (fold (TFrees.add_tfrees_unless (TFrees.defined type_tfrees)) exts')
+      |> TFrees.keys;
     val _ =
-      if null extraTs then ()
+      if null extra_tfrees then ()
       else warning ("Additional type variable(s) in locale specification " ^
           Binding.print binding ^ ": " ^
-          commas (map (Syntax.string_of_typ ctxt' o TFree) (sort_by #1 extraTs)));
+          commas (map (Syntax.string_of_typ ctxt' o TFree) extra_tfrees));
 
     val predicate_binding =
       if Binding.is_empty raw_predicate_binding then binding
@@ -860,7 +863,7 @@ fun gen_add_locale prep_include prep_decl
     val axioms = map (Element.conclude_witness pred_ctxt) b_axioms;
 
     val loc_ctxt = thy'
-      |> Locale.register_locale binding (extraTs, params)
+      |> Locale.register_locale binding (extra_tfrees, params)
           (asm, rev defs) (a_intro, b_intro) axioms hyp_spec [] (rev notes) (rev deps')
       |> Named_Target.init includes name
       |> fold (fn (kind, facts) => Local_Theory.notes_kind kind facts #> snd) notes';

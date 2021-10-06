@@ -145,7 +145,9 @@ object Build_Job
             val msg = Symbol.output(unicode_symbols, cat_lines(errors))
             progress.echo("\nBuild errors:\n" + Output.error_message_text(msg))
           }
-          if (rc != 0) progress.echo("\n" + Process_Result.print_return_code(rc))
+          if (rc != Process_Result.RC.ok) {
+            progress.echo("\n" + Process_Result.RC.print_long(rc))
+          }
       }
     })
   }
@@ -265,7 +267,8 @@ class Build_Job(progress: Progress,
       }
 
       val export_consumer =
-        Export.consumer(store.open_database(session_name, output = true), store.cache)
+        Export.consumer(store.open_database(session_name, output = true), store.cache,
+          progress = progress)
 
       val stdout = new StringBuilder(1000)
       val stderr = new StringBuilder(1000)
@@ -307,7 +310,7 @@ class Build_Job(progress: Progress,
                   }
                 (rc, errors)
               }
-              catch { case ERROR(err) => (2, List(err)) }
+              catch { case ERROR(err) => (Process_Result.RC.failure, List(err)) }
 
             session.protocol_command("Prover.stop", rc.toString)
             Build_Session_Errors(errors)
@@ -358,34 +361,38 @@ class Build_Job(progress: Progress,
       session.finished_theories += Session.Consumer[Document.Snapshot]("finished_theories")
         {
           case snapshot =>
-            val rendering = new Rendering(snapshot, options, session)
+            if (!progress.stopped) {
+              val rendering = new Rendering(snapshot, options, session)
 
-            def export(name: String, xml: XML.Body, compress: Boolean = true): Unit =
-            {
-              val theory_name = snapshot.node_name.theory
-              val args =
-                Protocol.Export.Args(theory_name = theory_name, name = name, compress = compress)
-              val bytes = Bytes(Symbol.encode(YXML.string_of_body(xml)))
-              if (!bytes.is_empty) export_consumer(session_name, args, bytes)
+              def export(name: String, xml: XML.Body, compress: Boolean = true): Unit =
+              {
+                if (!progress.stopped) {
+                  val theory_name = snapshot.node_name.theory
+                  val args =
+                    Protocol.Export.Args(theory_name = theory_name, name = name, compress = compress)
+                  val bytes = Bytes(Symbol.encode(YXML.string_of_body(xml)))
+                  if (!bytes.is_empty) export_consumer(session_name, args, bytes)
+                }
+              }
+              def export_text(name: String, text: String, compress: Boolean = true): Unit =
+                export(name, List(XML.Text(text)), compress = compress)
+
+              for (command <- snapshot.snippet_command) {
+                export_text(Export.DOCUMENT_ID, command.id.toString, compress = false)
+              }
+
+              export_text(Export.FILES,
+                cat_lines(snapshot.node_files.map(_.symbolic.node)), compress = false)
+
+              for (((_, xml), i) <- snapshot.xml_markup_blobs().zipWithIndex) {
+                export(Export.MARKUP + (i + 1), xml)
+              }
+              export(Export.MARKUP, snapshot.xml_markup())
+              export(Export.MESSAGES, snapshot.messages.map(_._1))
+
+              val citations = Library.distinct(rendering.citations(Text.Range.full).map(_.info))
+              export_text(Export.DOCUMENT_CITATIONS, cat_lines(citations))
             }
-            def export_text(name: String, text: String, compress: Boolean = true): Unit =
-              export(name, List(XML.Text(text)), compress = compress)
-
-            for (command <- snapshot.snippet_command) {
-              export_text(Export.DOCUMENT_ID, command.id.toString, compress = false)
-            }
-
-            export_text(Export.FILES,
-              cat_lines(snapshot.node_files.map(_.symbolic.node)), compress = false)
-
-            for (((_, xml), i) <- snapshot.xml_markup_blobs().zipWithIndex) {
-              export(Export.MARKUP + (i + 1), xml)
-            }
-            export(Export.MARKUP, snapshot.xml_markup())
-            export(Export.MESSAGES, snapshot.messages.map(_._1))
-
-            val citations = Library.distinct(rendering.citations(Text.Range.full).map(_.info))
-            export_text(Export.DOCUMENT_CITATIONS, cat_lines(citations))
         }
 
       session.all_messages += Session.Consumer[Any]("build_session_output")
@@ -498,14 +505,16 @@ class Build_Job(progress: Progress,
       build_errors match {
         case Exn.Res(build_errs) =>
           val errs = build_errs ::: document_errors
-          if (errs.isEmpty) result
-          else {
+          if (errs.nonEmpty) {
             result.error_rc.output(
               errs.flatMap(s => split_lines(Output.error_message_text(s))) :::
                 errs.map(Protocol.Error_Message_Marker.apply))
           }
+          else if (progress.stopped && result.ok) result.copy(rc = Process_Result.RC.interrupt)
+          else result
         case Exn.Exn(Exn.Interrupt()) =>
-          if (result.ok) result.copy(rc = Process_Result.interrupt_rc) else result
+          if (result.ok) result.copy(rc = Process_Result.RC.interrupt)
+          else result
         case Exn.Exn(exn) => throw exn
       }
     }

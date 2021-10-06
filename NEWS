@@ -4,38 +4,47 @@ Isabelle NEWS -- history of user-relevant changes
 (Note: Isabelle/jEdit shows a tree-view of the NEWS file in Sidekick.)
 
 
-New in this Isabelle version
-----------------------------
+New in Isabelle2021-1 (December 2021)
+-------------------------------------
 
 *** General ***
+
+* Commands 'syntax' and 'no_syntax' now work in a local theory context,
+but in contrast to 'notation' and 'no_notation' there is no proper way
+to refer to local entities. Note that local syntax works well with
+'bundle', e.g. see "lattice_syntax" vs. "no_lattice_syntax" in theory
+Main of Isabelle/HOL.
 
 * Configuration option "show_results" controls output of final results
 in commands like 'definition' or 'theorem'. Output is normally enabled
 in interactive mode, but it could occasionally cause unnecessary
 slowdown. It can be disabled like this:
 
-  context notes [[show_results = true]]
+  context notes [[show_results = false]]
   begin
     definition "test = True"
     theorem test by (simp add: test_def)
   end
 
-* Timeouts for Isabelle/ML tools are subject to system option
-"timeout_scale" --- this already used for the overall session build
-process before, and allows to adapt to slow machines. The underlying
-Timeout.apply in Isabelle/ML treats an original timeout specification 0
-as no timeout; before it meant immediate timeout. Rare INCOMPATIBILITY
-in boundary cases.
-
-* Remote provers from SystemOnTPTP (notably for Sledgehammer) are now
-managed via Isabelle/Scala instead of perl; the dependency on
-libwww-perl has been eliminated (notably on Linux). Rare
-INCOMPATIBILITY: HTTP proxy configuration now works via JVM properties
-https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/doc-files/net-properties.html
-
 * More symbol definitions for the Z Notation (Isabelle fonts and LaTeX).
 See also the group "Z Notation" in the Symbols dockable of
 Isabelle/jEdit.
+
+* The Isabelle/Haskell library ($ISABELLE_HOME/src/Tools/Haskell) has
+been significantly improved. In particular, module Isabelle.Bytes
+provides type Bytes for light-weight byte strings (with optional UTF8
+interpretation), similar to type string in Isabelle/ML. Isabelle symbols
+now work uniformly in Isabelle/Haskell vs. Isabelle/ML vs.
+Isabelle/Scala/PIDE.
+
+
+*** Isar ***
+
+* The improper proof command 'guess' is no longer part of by Pure, but
+provided by the separate theory "Pure-ex.Guess". INCOMPATIBILITY,
+existing applications need to import session "Pure-ex" and theory
+"Pure-ex.Guess". Afterwards it is usually better eliminate the 'guess'
+command, using explicit 'obtain' instead.
 
 
 *** Isabelle/jEdit Prover IDE ***
@@ -47,11 +56,18 @@ Isabelle/jEdit.
 * The main plugin for Isabelle/jEdit can be deactivated and reactivated
 as documented --- was broken at least since Isabelle2018.
 
+* Add-on components may provide their own jEdit plugins, via the new
+Scala/Java module concept: instances of class
+isabelle.Scala_Project.Plugin that are declared as "services" within
+etc/build.props are activated on Isabelle/jEdit startup. E.g. see
+existing isabelle.jedit.JEdit_Plugin0 (for isabelle_jedit_base.jar) and
+isabelle.jedit.JEdit_Plugin1 (for isabelle_jedit_main.jar).
+
 
 *** Document preparation ***
 
-* More predefined symbols: \<interleave> \<sslash> (package "stmaryrd"), \<checkmark> \<crossmark> (LaTeX package
-"pifont").
+* More predefined symbols: \<Parallel> \<interleave> \<sslash> (package "stmaryrd"), \<checkmark> \<crossmark> (LaTeX
+package "pifont").
 
 * High-quality blackboard-bold symbols from font "txmia" (LaTeX package
 "pxfonts"): \<bbbA>\<bool>\<complex>\<bbbD>\<bbbE>\<bbbF>\<bbbG>\<bbbH>\<bbbI>\<bbbJ>\<bbbK>\<bbbL>\<bbbM>\<nat>\<bbbO>\<bbbP>\<rat>\<real>\<bbbS>\<bbbT>\<bbbU>\<bbbV>\<bbbW>\<bbbX>\<bbbY>\<int>.
@@ -128,6 +144,75 @@ targets and in any nested target built on top of a target supporting
 
 *** HOL ***
 
+* Theorems "antisym" and "eq_iff" in class "order" have been renamed to
+"order.antisym" and "order.eq_iff", to coexist locally with "antisym"
+and "eq_iff" from locale "ordering". INCOMPATIBILITY: significant
+potential for change can be avoided if interpretations of type class
+"order" are replaced or augmented by interpretations of locale
+"ordering".
+
+* Theorem "swap_def" now is always qualified as "Fun.swap_def". Minor
+INCOMPATIBILITY; note that for most applications less elementary lemmas
+exists.
+
+* Lemma "permutes_induct" has been given stronger hypotheses and named
+premises. INCOMPATIBILITY.
+
+* Combinator "Fun.swap" resolved into a mere input abbreviation in
+separate theory "Transposition" in HOL-Combinatorics. INCOMPATIBILITY.
+
+* Infix syntax for bit operations AND, OR, XOR, NOT is now organized in
+bundle bit_operations_syntax. INCOMPATIBILITY.
+
+* Bit operations set_bit, unset_bit and flip_bit are now class
+operations. INCOMPATIBILITY.
+
+* Theory Bit_Operations is now part of HOL-Main. Minor INCOMPATIBILITY.
+
+* Simplified class hierarchy for bit operations: bit operations reside
+in classes (semi)ring_bit_operations, class semiring_bit_shifts is
+gone.
+
+* Expressions of the form "NOT (numeral _)" are not simplified by
+default any longer.  INCOMPATIBILITY, use not_one_eq and not_numeral_eq
+as simp rule explicitly if needed.
+
+* Abbreviation "max_word" has been moved to session Word_Lib in the AFP,
+as also have constants "shiftl1", "shiftr1", "sshiftr1", "bshiftr1",
+"setBit", "clearBit". See there further the changelog in theory Guide.
+INCOMPATIBILITY.
+
+* Reorganized classes and locales for boolean algebras.
+INCOMPATIBILITY.
+
+* New simp rules: less_exp, min.absorb1, min.absorb2, min.absorb3,
+min.absorb4, max.absorb1, max.absorb2, max.absorb3, max.absorb4. Minor
+INCOMPATIBILITY.
+
+* Sledgehammer:
+  - Update of bundled provers:
+      E 2.6
+      Vampire 4.5.1 (with Open Source license)
+      veriT 2021.06-rmx
+      Zipperposition 2.1
+  - Adjusted default provers:
+      cvc4 vampire verit e spass z3 zipperposition
+  - Removed legacy "lam_lifting" (synonym for "lifting") from option
+    "lam_trans". Minor INCOMPATIBILITY.
+  - Renamed "hide_lams" to "opaque_lifting" in option "lam_trans". Minor
+    INCOMPATIBILITY.
+  - Added "opaque_combs" to option "lam_trans": lambda expressions are
+    rewritten using combinators, but the combinators are kept opaque,
+    i.e. without definitions.
+
+* Metis: Renamed option "hide_lams" to "opaque_lifting". Minor
+INCOMPATIBILITY.
+
+* Theory HOL-Library.Lattice_Syntax has been superseded by bundle
+"lattice_syntax": it can be used in a local context via 'include' or in
+a global theory via 'unbundle'. The opposite declarations are bundled as
+"no_lattice_syntax". Minor INCOMPATIBILITY.
+
 * Theory "HOL-Library.Multiset": dedicated predicate "multiset" is gone,
 use explict expression instead. Minor INCOMPATIBILITY.
 
@@ -164,7 +249,7 @@ and some more small lemmas. Some theorems that were stated awkwardly
 before were corrected. Minor INCOMPATIBILITY.
 
 * Session "HOL-Analysis": the complex Arg function has been identified
-with the function "arg" of Complex_Main, renaming arg->Arg also in the
+with the function "arg" of Complex_Main, renaming arg ~> Arg also in the
 names of arg_bounded. Minor INCOMPATIBILITY.
 
 * Theory "HOL-Analysis.Infinite_Sum": new theory for infinite sums with
@@ -175,17 +260,6 @@ a more general definition than the existing theory Infinite_Set_Sum.
 uniform spaces as a uniform space. Minor INCOMPATIBILITY: the old
 definition "uniformity_prod_def" is available as a derived fact
 "uniformity_dist".
-
-* Theorems "antisym" and "eq_iff" in class "order" have been renamed to
-"order.antisym" and "order.eq_iff", to coexist locally with "antisym"
-and "eq_iff" from locale "ordering". INCOMPATIBILITY: significant
-potential for change can be avoided if interpretations of type class
-"order" are replaced or augmented by interpretations of locale
-"ordering".
-
-* Theorem "swap_def" now is always qualified as "Fun.swap_def". Minor
-INCOMPATIBILITY; note that for most applications less elementary lemmas
-exists.
 
 * Theory "HOL-Library.Permutation" has been renamed to the more specific
 "HOL-Library.List_Permutation". Note that most notions from that theory
@@ -200,54 +274,68 @@ HOL-Library.
 * Theory "HOL-Combinatorics.Transposition" provides elementary swap
 operation "transpose".
 
-* Lemma "permutes_induct" has been given stronger hypotheses and named
-premises. INCOMPATIBILITY.
-
-* Combinator "Fun.swap" resolved into a mere input abbreviation in
-separate theory "Transposition" in HOL-Combinatorics. INCOMPATIBILITY.
-
-* Infix syntax for bit operations AND, OR, XOR is now organized in
-bundle bit_operations_syntax. INCOMPATIBILITY.
-
-* Bit operations set_bit, unset_bit and flip_bit are now class
-operations. INCOMPATIBILITY.
-
-* Theory Bit_Operations is now part of HOL-Main. Minor INCOMPATIBILITY.
-
-* Simplified class hierarchy for bit operations: bit operations reside
-in classes (semi)ring_bit_operations, class semiring_bit_shifts is
-gone.
-
-* Expressions of the form "NOT (numeral _)" are not simplified by
-default any longer.  INCOMPATIBILITY, use not_one_eq and not_numeral_eq
-as simp rule explicitly if needed.
-
-* Abbreviation "max_word" has been moved to session Word_Lib in the AFP,
-as also have constants "shiftl1", "shiftr1", "sshiftr1", "bshiftr1",
-"setBit", "clearBit". See there further the changelog in theory Guide.
-INCOMPATIBILITY.
-
-* Reorganized classes and locales for boolean algebras.
-INCOMPATIBILITY.
-
-* New simp rules: less_exp, min.absorb1, min.absorb2, min.absorb3,
-min.absorb4, max.absorb1, max.absorb2, max.absorb3, max.absorb4. Minor
-INCOMPATIBILITY.
-
-* Sledgehammer:
- - Removed legacy "lam_lifting" (synonym for "lifting") from option
-   "lam_trans". Minor INCOMPATIBILITY.
- - Renamed "hide_lams" to "opaque_lifting" in option "lam_trans".
-   Minor INCOMPATIBILITY.
- - Added "opaque_combs" to option "lam_trans": lambda expressions are rewritten
-   using combinators, but the combinators are kept opaque, i.e. without
-   definitions.
-
-* Metis:
- - Renamed option "hide_lams" to "opaque_lifting". Minor INCOMPATIBILITY.
-
 
 *** ML ***
+
+* ML structures TFrees, TVars, Frees, Vars, Names provide scalable
+operations to accumulate items from types and terms, using a fast
+syntactic order. The original order of occurrences may be recovered as
+well, e.g. via TFrees.list_set.
+
+* Thm.instantiate, Thm.generalize and related operations require
+scalable datastructures from structure TVars, Vars, Names etc.
+INCOMPATIBILITY: e.g. use TVars.empty and TVars.make for immediate
+adoption; better use TVars.add, TVars.add_tfrees etc. for scalable
+accumulation of items.
+
+* ML antiquotations \<^tvar>\<open>?'a::sort\<close> and \<^var>\<open>?x::type\<close> inline
+corresponding ML values, notably as arguments for Thm.instantiate etc.
+
+* ML antiquotations \<^make_judgment> and \<^dest_judgment> refer to
+corresponding functions for the object-logic of the ML compilation
+context. This supersedes older mk_Trueprop / dest_Trueprop operations.
+
+* ML antiquotations for type constructors and term constants:
+
+    \<^Type>\<open>c\<close>
+    \<^Type>\<open>c T \<dots>\<close>       \<comment> \<open>same with type arguments\<close>
+    \<^Type_fn>\<open>c T \<dots>\<close>    \<comment> \<open>fn abstraction, failure via exception TYPE\<close>
+    \<^Const>\<open>c\<close>
+    \<^Const>\<open>c T \<dots>\<close>      \<comment> \<open>same with type arguments\<close>
+    \<^Const>\<open>c for t \<dots>\<close>  \<comment> \<open>same with term arguments\<close>
+    \<^Const_>\<open>c \<dots>\<close>       \<comment> \<open>same for patterns: case, let, fn\<close>
+    \<^Const_fn>\<open>c T \<dots>\<close>   \<comment> \<open>fn abstraction, failure via exception TERM\<close>
+
+The type/term arguments refer to nested ML source, which may contain
+antiquotations recursively. The following argument syntax is supported:
+
+  - an underscore (dummy pattern)
+  - an atomic item of "embedded" syntax, e.g. identifier or cartouche
+  - an antiquotation in control-symbol/cartouche form, e.g. \<^Type>\<open>c\<close>
+    as short form of \<open>\<^Type>\<open>c\<close>\<close>.
+
+Examples in HOL:
+
+  val natT = \<^Type>\<open>nat\<close>;
+  fun mk_funT (A, B) = \<^Type>\<open>fun A B\<close>;
+  val dest_funT = \<^Type_fn>\<open>fun A B => \<open>(A, B)\<close>\<close>;
+  fun mk_conj (A, B) = \<^Const>\<open>conj for A B\<close>;
+  val dest_conj = \<^Const_fn>\<open>conj for A B => \<open>(A, B)\<close>\<close>;
+  fun mk_eq T (t, u) = \<^Const>\<open>HOL.eq T for t u\<close>;
+  val dest_eq = \<^Const_fn>\<open>HOL.eq T for t u => \<open>(T, (t, u))\<close>\<close>;
+
+* The "build" combinators of various data structures help to build
+content from bottom-up, by applying an "add" function the "empty" value.
+For example:
+
+  - type 'a Symtab.table etc.: build
+  - type 'a Names.table etc.: build
+  - type 'a list: build and build_rev
+  - type Buffer.T: build and build_content
+
+For example, see src/Pure/PIDE/xml.ML:
+
+  val content_of = Buffer.build_content o fold add_content;
 
 * ML antiquotations \<^try>\<open>expr\<close> and \<^can>\<open>expr\<close> operate directly on
 the given ML expression, in contrast to functions "try" and "can" that
@@ -267,8 +355,11 @@ Silicon.
 The main Isabelle/ML interface is Isabelle_System.bash_process with
 result type Process_Result.T (resembling class Process_Result in Scala);
 derived operations Isabelle_System.bash and Isabelle_System.bash_output
-provide similar functionality as before. Rare INCOMPATIBILITY due to
-subtle semantic differences:
+provide similar functionality as before. The underlying TCP/IP server
+within Isabelle/Scala is available to other programming languages as
+well, notably Isabelle/Haskell.
+
+Rare INCOMPATIBILITY due to subtle semantic differences:
 
   - Processes invoked from Isabelle/ML actually run in the context of
     the Java VM of Isabelle/Scala. The settings environment and current
@@ -290,20 +381,19 @@ subtle semantic differences:
     like Isabelle_System.with_tmp_file to create a file name and
     File.read to retrieve its content.
 
-  - Just like any other Scala function invoked from ML,
-    Isabelle_System.bash_process requires a proper PIDE session context.
-    This could be a regular batch session (e.g. "isabelle build"), a
-    PIDE editor session (e.g. "isabelle jedit"), or headless PIDE (e.g.
-    "isabelle dump" or "isabelle server"). Note that old "isabelle
-    console" or raw "isabelle process" don't have that.
+  - The Isabelle/Scala "bash_process" server requires a PIDE session
+    context. This could be a regular batch session (e.g. "isabelle
+    build"), a PIDE editor session (e.g. "isabelle jedit"), or headless
+    PIDE (e.g. "isabelle dump" or "isabelle server"). Note that old
+    "isabelle console" or raw "isabelle process" don't have that.
 
 New Process_Result.timing works as in Isabelle/Scala, based on direct
 measurements of the bash_process wrapper in C: elapsed time is always
 available, CPU time is only available on Linux and macOS, GC time is
 unavailable.
 
-* Likewise, the following Isabelle/ML system operations are run in the
-context of Isabelle/Scala:
+* The following Isabelle/ML system operations are run in the context of
+Isabelle/Scala, within a PIDE session context:
 
   - Isabelle_System.make_directory
   - Isabelle_System.copy_dir
@@ -312,8 +402,21 @@ context of Isabelle/Scala:
   - Isabelle_System.rm_tree
   - Isabelle_System.download
 
+* ML profiling has been updated and reactivated, after some degration in
+Isabelle2021:
+
+  - "isabelle build -o threads=1 -o profiling=..." works properly
+    within the PIDE session context;
+
+  - "isabelle profiling_report" now uses the session build database
+    (like "isabelle log");
+
+  - output uses non-intrusive tracing messages, instead of warnings.
+
 
 *** System ***
+
+* Update to OpenJDK 17: the current long-term support version of Java.
 
 * Each Isabelle component may specify a Scala/Java jar module
 declaratively via etc/build.props (file names are relative to the
@@ -338,16 +441,18 @@ plugins that are produced in $JEDIT_SETTINGS/jars on demand. The main
 isabelle.jedit module is now part of Isabelle/Scala (as one big
 $ISABELLE_SCALA_JAR).
 
-* ML profiling has been updated and reactivated, after some degration in
-Isabelle2021:
+* Timeouts for Isabelle/ML tools are subject to system option
+"timeout_scale" --- this already used for the overall session build
+process before, and allows to adapt to slow machines. The underlying
+Timeout.apply in Isabelle/ML treats an original timeout specification 0
+as no timeout; before it meant immediate timeout. Rare INCOMPATIBILITY
+in boundary cases.
 
-  - "isabelle build -o threads=1 -o profiling=..." works properly
-    within the PIDE session context;
-
-  - "isabelle profiling_report" now uses the session build database
-    (like "isabelle log");
-
-  - output uses non-intrusive tracing messages, instead of warnings.
+* Remote provers from SystemOnTPTP (notably for Sledgehammer) are now
+managed via Isabelle/Scala instead of perl; the dependency on
+libwww-perl has been eliminated (notably on Linux). Rare
+INCOMPATIBILITY: HTTP proxy configuration now works via JVM properties
+https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/doc-files/net-properties.html
 
 * System option "system_log" specifies an optional log file for internal
 messages produced by Output.system_message in Isabelle/ML; the value
@@ -361,7 +466,7 @@ notation of type bool. E.g. "isabelle build -o system_log".
 can be used in the short form. E.g. "isabelle build -o document".
 
 * Command-line tool "isabelle version" supports repository archives
-(without full .hg directory). More options.
+(without full .hg directory). It also provides more options.
 
 * Obsolete settings variable ISABELLE_PLATFORM32 has been discontinued.
 Note that only Windows supports old 32 bit executables, via settings

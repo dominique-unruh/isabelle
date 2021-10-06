@@ -1771,7 +1771,7 @@ fun add_code ext_tyco vs extT ext simps inject thy =
       fun mk_eq_refl ctxt =
         @{thm equal_refl}
         |> Thm.instantiate
-          ([((("'a", 0), \<^sort>\<open>equal\<close>), Thm.ctyp_of ctxt (Logic.varifyT_global extT))], [])
+          (TVars.make [(\<^tvar>\<open>?'a::equal\<close>, Thm.ctyp_of ctxt (Logic.varifyT_global extT))], Vars.empty)
         |> Axclass.unoverload ctxt;
       val ensure_random_record = ensure_sort_record (\<^sort>\<open>random\<close>, mk_random_eq);
       val ensure_exhaustive_record =
@@ -1781,8 +1781,7 @@ fun add_code ext_tyco vs extT ext simps inject thy =
           val ctxt = Proof_Context.init_global thy;
         in
           thy
-          |> Code.declare_default_eqns_global
-               [(mk_eq (Proof_Context.init_global thy) eq_def, true), (mk_eq_refl (Proof_Context.init_global thy), false)]
+          |> Code.declare_default_eqns_global [(mk_eq ctxt eq_def, true), (mk_eq_refl ctxt, false)]
         end;
     in
       thy
@@ -1809,8 +1808,8 @@ fun add_ctr_sugar ctr exhaust inject sel_thms =
      distinct_discsss = [], exhaust_discs = [], exhaust_sels = [], collapses = [], expands = [],
      split_sels = [], split_sel_asms = [], case_eq_ifs = []};
 
-fun lhs_of_equation (Const (\<^const_name>\<open>Pure.eq\<close>, _) $ t $ _) = t
-  | lhs_of_equation (\<^const>\<open>Trueprop\<close> $ (Const (\<^const_name>\<open>HOL.eq\<close>, _) $ t $ _)) = t;
+fun lhs_of_equation \<^Const_>\<open>Pure.eq _ for t _\<close> = t
+  | lhs_of_equation \<^Const_>\<open>Trueprop for \<^Const_>\<open>HOL.eq _ for t _\<close>\<close> = t;
 
 fun add_spec_rule rule =
   let val head = head_of (lhs_of_equation (Thm.prop_of rule))

@@ -22,31 +22,23 @@ end;
 structure ArithData: ARITH_DATA =
 struct
 
-val iT = Ind_Syntax.iT;
-
-val zero = Const(\<^const_name>\<open>zero\<close>, iT);
-val succ = Const(\<^const_name>\<open>succ\<close>, iT --> iT);
+val zero = \<^Const>\<open>zero\<close>;
+val succ = \<^Const>\<open>succ\<close>;
 fun mk_succ t = succ $ t;
 val one = mk_succ zero;
 
-val mk_plus = FOLogic.mk_binop \<^const_name>\<open>Arith.add\<close>;
+fun mk_plus (t, u) = \<^Const>\<open>Arith.add for t u\<close>;
 
 (*Thus mk_sum[t] yields t+#0; longer sums don't have a trailing zero*)
 fun mk_sum []        = zero
   | mk_sum [t,u]     = mk_plus (t, u)
   | mk_sum (t :: ts) = mk_plus (t, mk_sum ts);
 
-(*this version ALWAYS includes a trailing zero*)
-fun long_mk_sum []        = zero
-  | long_mk_sum (t :: ts) = mk_plus (t, mk_sum ts);
-
-val dest_plus = FOLogic.dest_bin \<^const_name>\<open>Arith.add\<close> iT;
-
 (* dest_sum *)
 
-fun dest_sum (Const(\<^const_name>\<open>zero\<close>,_)) = []
-  | dest_sum (Const(\<^const_name>\<open>succ\<close>,_) $ t) = one :: dest_sum t
-  | dest_sum (Const(\<^const_name>\<open>Arith.add\<close>,_) $ t $ u) = dest_sum t @ dest_sum u
+fun dest_sum \<^Const_>\<open>zero\<close> = []
+  | dest_sum \<^Const_>\<open>succ for t\<close> = one :: dest_sum t
+  | dest_sum \<^Const_>\<open>Arith.add for t u\<close> = dest_sum t @ dest_sum u
   | dest_sum tm = [tm];
 
 (*Apply the given rewrite (if present) just once*)
@@ -55,22 +47,19 @@ fun gen_trans_tac _ _ NONE = all_tac
 
 (*Use <-> or = depending on the type of t*)
 fun mk_eq_iff(t,u) =
-  if fastype_of t = iT then FOLogic.mk_eq(t,u)
-                       else FOLogic.mk_iff(t,u);
+  if fastype_of t = \<^Type>\<open>i\<close>
+  then \<^Const>\<open>IFOL.eq \<^Type>\<open>i\<close> for t u\<close>
+  else \<^Const>\<open>IFOL.iff for t u\<close>;
 
 (*We remove equality assumptions because they confuse the simplifier and
   because only type-checking assumptions are necessary.*)
-fun is_eq_thm th =
-    can FOLogic.dest_eq (FOLogic.dest_Trueprop (Thm.prop_of th));
-
-fun add_chyps chyps ct = Drule.list_implies (map Thm.cprop_of chyps, ct);
+fun is_eq_thm th = can FOLogic.dest_eq (\<^dest_judgment> (Thm.prop_of th));
 
 fun prove_conv name tacs ctxt prems (t,u) =
   if t aconv u then NONE
   else
   let val prems' = filter_out is_eq_thm prems
-      val goal = Logic.list_implies (map Thm.prop_of prems',
-        FOLogic.mk_Trueprop (mk_eq_iff (t, u)));
+      val goal = Logic.list_implies (map Thm.prop_of prems', \<^make_judgment> (mk_eq_iff (t, u)));
   in SOME (prems' MRS Goal.prove ctxt [] [] goal (K (EVERY tacs)))
       handle ERROR msg =>
         (warning (msg ^ "\nCancellation failed: no typing information? (" ^ name ^ ")"); NONE)
@@ -80,19 +69,17 @@ fun prove_conv name tacs ctxt prems (t,u) =
 (*** Use CancelNumerals simproc without binary numerals,
      just for cancellation ***)
 
-val mk_times = FOLogic.mk_binop \<^const_name>\<open>Arith.mult\<close>;
+fun mk_times (t, u) = \<^Const>\<open>Arith.mult for t u\<close>;
 
 fun mk_prod [] = one
   | mk_prod [t] = t
   | mk_prod (t :: ts) = if t = one then mk_prod ts
                         else mk_times (t, mk_prod ts);
 
-val dest_times = FOLogic.dest_bin \<^const_name>\<open>Arith.mult\<close> iT;
-
-fun dest_prod t =
-      let val (t,u) = dest_times t
-      in  dest_prod t @ dest_prod u  end
-      handle TERM _ => [t];
+fun dest_prod tm =
+  let val (t,u) = \<^Const_fn>\<open>Arith.mult for t u => \<open>(t, u)\<close>\<close> tm
+  in  dest_prod t @ dest_prod u  end
+  handle TERM _ => [tm];
 
 (*Dummy version: the only arguments are 0 and 1*)
 fun mk_coeff (0, t) = zero
@@ -175,8 +162,8 @@ structure LessCancelNumeralsData =
   struct
   open CancelNumeralsCommon
   val prove_conv = prove_conv "natless_cancel_numerals"
-  val mk_bal   = FOLogic.mk_binrel \<^const_name>\<open>Ordinal.lt\<close>
-  val dest_bal = FOLogic.dest_bin \<^const_name>\<open>Ordinal.lt\<close> iT
+  fun mk_bal (t, u) = \<^Const>\<open>Ordinal.lt for t u\<close>
+  val dest_bal = \<^Const_fn>\<open>Ordinal.lt for t u => \<open>(t, u)\<close>\<close>
   val bal_add1 = @{thm less_add_iff [THEN iff_trans]}
   val bal_add2 = @{thm less_add_iff [THEN iff_trans]}
   fun trans_tac ctxt = gen_trans_tac ctxt @{thm iff_trans}
@@ -188,8 +175,8 @@ structure DiffCancelNumeralsData =
   struct
   open CancelNumeralsCommon
   val prove_conv = prove_conv "natdiff_cancel_numerals"
-  val mk_bal   = FOLogic.mk_binop \<^const_name>\<open>Arith.diff\<close>
-  val dest_bal = FOLogic.dest_bin \<^const_name>\<open>Arith.diff\<close> iT
+  fun mk_bal (t, u) = \<^Const>\<open>Arith.diff for t u\<close>
+  val dest_bal = \<^Const_fn>\<open>Arith.diff for t u => \<open>(t, u)\<close>\<close>
   val bal_add1 = @{thm diff_add_eq [THEN trans]}
   val bal_add2 = @{thm diff_add_eq [THEN trans]}
   fun trans_tac ctxt = gen_trans_tac ctxt @{thm trans}

@@ -28,6 +28,7 @@ sig
       Source.source) Source.source
   val tokenize: string -> token list
   val tokenize_range: Position.range -> string -> token list
+  val tokenize_no_range: string -> token list
   val read_text: Symbol_Pos.text * Position.T -> token Antiquote.antiquote list
   val read: Symbol_Pos.text -> token Antiquote.antiquote list
   val read_range: Position.range -> Symbol_Pos.text -> token Antiquote.antiquote list
@@ -35,6 +36,7 @@ sig
     token Antiquote.antiquote Symbol_Pos.scanner -> Input.source -> token Antiquote.antiquote list
   val read_source: Input.source -> token Antiquote.antiquote list
   val read_source_sml: Input.source -> token Antiquote.antiquote list
+  val read_symbols: Symbol_Pos.T list -> token Antiquote.antiquote list
   val read_symbols_sml: Symbol_Pos.T list -> token Antiquote.antiquote list
 end;
 
@@ -314,7 +316,7 @@ val scan_sml_antiq = scan_sml >> Antiquote.Text;
 
 val scan_ml_antiq =
   Comment.scan_inner >> (fn (kind, ss) => Antiquote.Text (token (Comment (SOME kind)) ss)) ||
-  Antiquote.scan_control >> Antiquote.Control ||
+  Antiquote.scan_control Antiquote.err_prefix >> Antiquote.Control ||
   Antiquote.scan_antiq >> Antiquote.Antiq ||
   scan_rat_antiq >> Antiquote.Antiq ||
   scan_sml_antiq;
@@ -359,6 +361,7 @@ fun source src =
 
 val tokenize = Symbol.explode #> Source.of_list #> source #> Source.exhaust;
 fun tokenize_range range = tokenize #> map (set_range range);
+val tokenize_no_range = tokenize_range Position.no_range;
 
 val read_text = reader {opaque_warning = true} scan_ml_antiq o Symbol_Pos.explode;
 fun read text = read_text (text, Position.none);
@@ -387,6 +390,7 @@ val read_source_sml =
   read_source' {language = Markup.language_SML, symbols = false, opaque_warning = false}
     scan_sml_antiq;
 
+val read_symbols = reader {opaque_warning = true} scan_ml_antiq;
 val read_symbols_sml = reader {opaque_warning = false} scan_sml_antiq;
 
 end;

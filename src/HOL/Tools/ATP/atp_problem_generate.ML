@@ -209,7 +209,9 @@ val combs_and_liftingN = "combs_and_lifting"
 val combs_or_liftingN = "combs_or_lifting"
 val keep_lamsN = "keep_lams"
 
+(* The capitalization of the TPTP output respects the capitalzation of the prefix. *)
 val bound_var_prefix = "B_"
+val let_bound_var_prefix = "l_"
 val all_bound_var_prefix = "A_"
 val exist_bound_var_prefix = "E_"
 val schematic_var_prefix = "V_"
@@ -512,11 +514,36 @@ fun make_subclass_pairs thy subs supers =
   in map supers_of subs |> filter_out (null o snd) end
 
 (* intermediate terms *)
+(* TODO: Merge IConst and IVar *)
 datatype iterm =
   IConst of (string * string) * typ * typ list |
   IVar of (string * string) * typ |
   IApp of iterm * iterm |
   IAbs of ((string * string) * typ) * iterm
+
+fun alpha_rename from to =
+  let
+    fun traverse (tm as IConst (name, T, Ts)) =
+        if name = from then IConst (to, T, Ts) else tm
+      | traverse (tm as IVar (name, T)) =
+        if name = from then IVar (to, T) else tm
+      | traverse (tm as IApp (tm1, tm2)) =
+        let
+          val tm1' = traverse tm1
+          val tm2' = traverse tm2
+        in
+          if tm1 = tm1' andalso tm2 = tm2' then tm else IApp (tm1', tm2')
+        end
+      | traverse (tm as IAbs (binding as (name, _), tm1)) =
+        if name = from then
+          tm
+        else
+          let val tm1' = traverse tm1 in
+            if tm1 = tm1' then tm else IAbs (binding, tm1')
+          end
+  in
+    traverse
+  end
 
 fun ityp_of (IConst (_, T, _)) = T
   | ityp_of (IVar (_, T)) = T
@@ -746,17 +773,17 @@ fun adjust_type_enc (THF (fool, Polymorphic, hologic)) (Native (order, fool', po
 
 fun is_first_order_lambda_free t =
   (case t of
-    \<^const>\<open>Not\<close> $ t1 => is_first_order_lambda_free t1
-  | Const (\<^const_name>\<open>All\<close>, _) $ Abs (_, _, t') => is_first_order_lambda_free t'
-  | Const (\<^const_name>\<open>All\<close>, _) $ t1 => is_first_order_lambda_free t1
-  | Const (\<^const_name>\<open>Ex\<close>, _) $ Abs (_, _, t') => is_first_order_lambda_free t'
-  | Const (\<^const_name>\<open>Ex\<close>, _) $ t1 => is_first_order_lambda_free t1
-  | \<^const>\<open>HOL.conj\<close> $ t1 $ t2 => is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
-  | \<^const>\<open>HOL.disj\<close> $ t1 $ t2 => is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
-  | \<^const>\<open>HOL.implies\<close> $ t1 $ t2 =>
-    is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
-  | Const (\<^const_name>\<open>HOL.eq\<close>, Type (_, [\<^typ>\<open>bool\<close>, _])) $ t1 $ t2 =>
-    is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
+    \<^Const_>\<open>Not for t1\<close> => is_first_order_lambda_free t1
+  | \<^Const_>\<open>All _ for \<open>Abs (_, _, t')\<close>\<close> => is_first_order_lambda_free t'
+  | \<^Const_>\<open>All _ for t1\<close> => is_first_order_lambda_free t1
+  | \<^Const_>\<open>Ex _ for \<open>Abs (_, _, t')\<close>\<close> => is_first_order_lambda_free t'
+  | \<^Const_>\<open>Ex _ for t1\<close> => is_first_order_lambda_free t1
+  | \<^Const_>\<open>conj for t1 t2\<close> => is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
+  | \<^Const_>\<open>disj for t1 t2\<close> => is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
+  | \<^Const_>\<open>implies for t1 t2\<close> =>
+      is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
+  | \<^Const_>\<open>HOL.eq \<^Type>\<open>bool\<close> for t1 t2\<close> =>
+      is_first_order_lambda_free t1 andalso is_first_order_lambda_free t2
   | _ => not (exists_subterm (fn Abs _ => true | _ => false) t))
 
 fun simple_translate_lambdas eta_matters do_lambdas ctxt type_enc t =
@@ -766,22 +793,22 @@ fun simple_translate_lambdas eta_matters do_lambdas ctxt type_enc t =
     let
       fun trans_first_order Ts t =
         (case t of
-          \<^const>\<open>Not\<close> $ t1 => \<^const>\<open>Not\<close> $ trans_first_order Ts t1
-        | (t0 as Const (\<^const_name>\<open>All\<close>, _)) $ Abs (s, T, t') =>
+          \<^Const_>\<open>Not for t1\<close> => \<^Const>\<open>Not for \<open>trans_first_order Ts t1\<close>\<close>
+        | (t0 as \<^Const_>\<open>All _\<close>) $ Abs (s, T, t') =>
           t0 $ Abs (s, T, trans_first_order (T :: Ts) t')
-        | (t0 as Const (\<^const_name>\<open>All\<close>, _)) $ t1 =>
+        | (t0 as \<^Const_>\<open>All _\<close>) $ t1 =>
           trans_first_order Ts (t0 $ eta_expand Ts t1 1)
-        | (t0 as Const (\<^const_name>\<open>Ex\<close>, _)) $ Abs (s, T, t') =>
+        | (t0 as \<^Const_>\<open>Ex _\<close>) $ Abs (s, T, t') =>
           t0 $ Abs (s, T, trans_first_order (T :: Ts) t')
-        | (t0 as Const (\<^const_name>\<open>Ex\<close>, _)) $ t1 =>
+        | (t0 as \<^Const_>\<open>Ex _\<close>) $ t1 =>
           trans_first_order Ts (t0 $ eta_expand Ts t1 1)
-        | (t0 as \<^const>\<open>HOL.conj\<close>) $ t1 $ t2 =>
+        | (t0 as \<^Const_>\<open>conj\<close>) $ t1 $ t2 =>
           t0 $ trans_first_order Ts t1 $ trans_first_order Ts t2
-        | (t0 as \<^const>\<open>HOL.disj\<close>) $ t1 $ t2 =>
+        | (t0 as \<^Const_>\<open>disj\<close>) $ t1 $ t2 =>
           t0 $ trans_first_order Ts t1 $ trans_first_order Ts t2
-        | (t0 as \<^const>\<open>HOL.implies\<close>) $ t1 $ t2 =>
+        | (t0 as \<^Const_>\<open>implies\<close>) $ t1 $ t2 =>
           t0 $ trans_first_order Ts t1 $ trans_first_order Ts t2
-        | (t0 as Const (\<^const_name>\<open>HOL.eq\<close>, Type (_, [\<^typ>\<open>bool\<close>, _]))) $ t1 $ t2 =>
+        | (t0 as \<^Const_>\<open>HOL.eq \<^Type>\<open>bool\<close>\<close>) $ t1 $ t2 =>
           t0 $ trans_first_order Ts t1 $ trans_first_order Ts t2
         | _ =>
           if not (exists_subterm (fn Abs _ => true | _ => false) t) then t
@@ -1170,9 +1197,10 @@ fun eta_expand_quantifier_body (tm as IAbs _) = tm
       val x = generate_unique_name
         (fn n => "X" ^ (if n = 0 then "" else string_of_int n))
         (fn name => not (exists (equal name) vars)) 0
+        |> `(prefix bound_var_prefix)
       val T = domain_type (ityp_of tm)
     in
-      IAbs ((`I x, T), IApp (tm, IConst (`I x, T, [])))
+      IAbs ((x, T), IApp (tm, IConst (x, T, [])))
     end
 
 fun introduce_builtins_and_proxies_in_iterm type_enc =
@@ -1207,7 +1235,20 @@ fun introduce_builtins_and_proxies_in_iterm type_enc =
           val tm2' = intro false [] tm2
           val tm2'' =
             (case tm1' of
-              IConst ((s, _), _, _) =>
+              IApp (IConst ((s, _), _, _), _) =>
+              if s = tptp_let then
+                (case tm2' of
+                  IAbs ((name, T), tm) =>
+                    let
+                      val name' =
+                        map_prod (prefix let_bound_var_prefix o unprefix bound_var_prefix) I name
+                    in
+                      IAbs ((name', T), alpha_rename name name' tm)
+                    end
+                | _ => error "Function abstraction expected")
+              else
+                tm2'
+            | IConst ((s, _), _, _) =>
               if s = tptp_ho_forall orelse s = tptp_ho_exists then
                 eta_expand_quantifier_body tm2'
               else
@@ -1340,18 +1381,18 @@ fun iformula_of_prop ctxt type_enc iff_for_eq =
       do_formula bs pos1 t1 ##>> do_formula bs pos2 t2 #>> uncurry (mk_aconn c)
     and do_formula bs pos t =
       (case t of
-        \<^const>\<open>Trueprop\<close> $ t1 => do_formula bs pos t1
-      | \<^const>\<open>Not\<close> $ t1 => do_formula bs (Option.map not pos) t1 #>> mk_anot
-      | Const (\<^const_name>\<open>All\<close>, _) $ Abs (s, T, t') => do_quant bs AForall pos s T t'
-      | (t0 as Const (\<^const_name>\<open>All\<close>, _)) $ t1 =>
+        \<^Const_>\<open>Trueprop for t1\<close> => do_formula bs pos t1
+      | \<^Const_>\<open>Not for t1\<close> => do_formula bs (Option.map not pos) t1 #>> mk_anot
+      | \<^Const_>\<open>All _ for \<open>Abs (s, T, t')\<close>\<close> => do_quant bs AForall pos s T t'
+      | (t0 as \<^Const_>\<open>All _\<close>) $ t1 =>
         do_formula bs pos (t0 $ eta_expand (map (snd o snd) bs) t1 1)
-      | Const (\<^const_name>\<open>Ex\<close>, _) $ Abs (s, T, t') => do_quant bs AExists pos s T t'
-      | (t0 as Const (\<^const_name>\<open>Ex\<close>, _)) $ t1 =>
+      | \<^Const_>\<open>Ex _ for \<open>Abs (s, T, t')\<close>\<close> => do_quant bs AExists pos s T t'
+      | (t0 as \<^Const_>\<open>Ex _\<close>) $ t1 =>
         do_formula bs pos (t0 $ eta_expand (map (snd o snd) bs) t1 1)
-      | \<^const>\<open>HOL.conj\<close> $ t1 $ t2 => do_conn bs AAnd pos t1 pos t2
-      | \<^const>\<open>HOL.disj\<close> $ t1 $ t2 => do_conn bs AOr pos t1 pos t2
-      | \<^const>\<open>HOL.implies\<close> $ t1 $ t2 => do_conn bs AImplies (Option.map not pos) t1 pos t2
-      | Const (\<^const_name>\<open>HOL.eq\<close>, Type (_, [\<^typ>\<open>bool\<close>, _])) $ t1 $ t2 =>
+      | \<^Const_>\<open>conj for t1 t2\<close> => do_conn bs AAnd pos t1 pos t2
+      | \<^Const_>\<open>disj for t1 t2\<close> => do_conn bs AOr pos t1 pos t2
+      | \<^Const_>\<open>implies for t1 t2\<close> => do_conn bs AImplies (Option.map not pos) t1 pos t2
+      | \<^Const_>\<open>HOL.eq \<^Type>\<open>bool\<close> for t1 t2\<close> =>
         if iff_for_eq then do_conn bs AIff NONE t1 NONE t2 else do_term bs t
       | _ => do_term bs t)
   in do_formula [] end
@@ -1408,7 +1449,7 @@ fun presimp_prop simp_options ctxt type_enc t =
       |> presimplify_term simp_options ctxt
       |> HOLogic.dest_Trueprop
   end
-  handle TERM _ => \<^const>\<open>True\<close>
+  handle TERM _ => \<^Const>\<open>True\<close>
 
 (* Satallax prefers "=" to "<=>" (for definitions) and Metis (CNF) requires "=" for technical
    reasons. *)
@@ -1738,6 +1779,8 @@ fun firstorderize_fact thy ctrss type_enc uncurried_aliases completish sym_tab =
           in
             args |> chop ary |>> list_app head |> list_app_ops
           end
+        | IAbs ((name, T), tm) =>
+          list_app_ops (IAbs ((name, T), introduce_app_ops tm), args)
         | _ => list_app_ops (head, args))
       end
     fun introduce_predicators tm =
@@ -1987,9 +2030,9 @@ val pull_and_reorder_definitions =
         end
   in List.partition (curry (op =) Definition o #role) #>> reorder [] #> op @ end
 
-fun s_not_prop (\<^const>\<open>Trueprop\<close> $ t) = \<^const>\<open>Trueprop\<close> $ s_not t
-  | s_not_prop (\<^const>\<open>Pure.imp\<close> $ t $ \<^prop>\<open>False\<close>) = t
-  | s_not_prop t = \<^const>\<open>Pure.imp\<close> $ t $ \<^prop>\<open>False\<close>
+fun s_not_prop \<^Const_>\<open>Trueprop for t\<close> = \<^Const>\<open>Trueprop for \<open>s_not t\<close>\<close>
+  | s_not_prop \<^Const_>\<open>Pure.imp for t \<^prop>\<open>False\<close>\<close> = t
+  | s_not_prop t = \<^Const>\<open>Pure.imp for t \<^prop>\<open>False\<close>\<close>
 
 fun translate_formulas simp_options ctxt prem_role format type_enc lam_trans presimp hyp_ts concl_t
       facts =

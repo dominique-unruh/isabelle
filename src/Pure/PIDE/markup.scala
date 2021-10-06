@@ -159,6 +159,8 @@ object Markup
   val DEF_FILE = "def_file"
   val DEF_ID = "def_id"
 
+  val DEF_THEORY = "def_theory"
+
   val POSITION = "position"
 
   val POSITION_PROPERTIES = Set(LINE, OFFSET, END_OFFSET, FILE, ID)
@@ -306,6 +308,7 @@ object Markup
   val THEORY = "theory"
   val CLASS = "class"
   val LOCALE = "locale"
+  val BUNDLE = "bundle"
   val TYPE_NAME = "type_name"
   val CONSTANT = "constant"
   val AXIOM = "axiom"

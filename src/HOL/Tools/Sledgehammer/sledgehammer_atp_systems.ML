@@ -45,7 +45,6 @@ sig
   val spass_H2NuVS0 : string
   val spass_H2NuVS0Red2 : string
   val spass_H2SOS : string
-  val is_vampire_noncommercial_license_accepted : unit -> bool option
   val isabelle_scala_function: string list * string list
   val remote_atp : string -> string -> string list -> (string * string) list ->
     (atp_failure * string) list -> atp_formula_role -> (Proof.context -> slice_spec * string) ->
@@ -452,46 +451,24 @@ val spass = (spassN, fn () => spass_config)
 
 (* Vampire *)
 
-fun is_vampire_noncommercial_license_accepted () =
-  let
-    val flag = Options.default_string \<^system_option>\<open>vampire_noncommercial\<close>
-      |> String.map Char.toLower
-  in
-    if flag = "yes" then
-      SOME true
-    else if flag = "no" then
-      SOME false
-    else
-      NONE
-  end
-
-fun check_vampire_noncommercial () =
-  (case is_vampire_noncommercial_license_accepted () of
-    SOME true => ()
-  | SOME false =>
-    error (Pretty.string_of (Pretty.para
-      "The Vampire prover may be used only for noncommercial applications"))
-  | NONE =>
-    error (Pretty.string_of (Pretty.para
-      "The Vampire prover is not activated; to activate it, set the Isabelle system option \
-      \\"vampire_noncommercial\" to \"yes\" (e.g. via the Isabelle/jEdit menu Plugin Options \
-      \/ Isabelle / General)")))
-
-val vampire_basic_options = "--proof tptp --output_axiom_names on $VAMPIRE_EXTRA_OPTIONS"
+val vampire_basic_options =
+  "--proof tptp --output_axiom_names on" ^
+  (if ML_System.platform_is_windows
+   then ""  (*time slicing is not support in the Windows version of Vampire*)
+   else " --mode casc")
 
 val vampire_full_proof_options =
   " --proof_extra free --forced_options avatar=off:equality_proxy=off:general_splitting=off:inequality_splitting=0:naming=0"
 
 val vampire_config : atp_config =
   let
-    val format = TFF (Without_FOOL, Monomorphic)
+    val format = TFF (With_FOOL, Monomorphic)
   in
     {exec = (["VAMPIRE_HOME"], ["vampire"]),
      arguments = fn _ => fn full_proofs => fn sos => fn timeout => fn problem => fn _ =>
-       (check_vampire_noncommercial ();
-        [vampire_basic_options ^ (if full_proofs then " " ^ vampire_full_proof_options else "") ^
+       [vampire_basic_options ^ (if full_proofs then " " ^ vampire_full_proof_options else "") ^
          " -t " ^ string_of_int (to_secs 1 timeout) ^ " --input_file " ^ File.bash_path problem
-         |> sos = sosN ? prefix "--sos on "]),
+         |> sos = sosN ? prefix "--sos on "],
      proof_delims =
        [("=========== Refutation ==========",
          "======= End of refutation =======")] @
@@ -544,9 +521,9 @@ val z3_tptp = (z3_tptpN, fn () => z3_tptp_config)
 
 (* Zipperposition *)
 
-val zipperposition_blsimp = "--mode ho-pragmatic --max-inferences 3 --ho-max-app-projections 0 --ho-max-elims 0 --ho-max-rigid-imitations 2 --ho-max-identifications 0 --ho-unif-max-depth 2 --boolean-reasoning no-cases --ext-rules ext-family --ext-rules-max-depth 1 --kbo-weight-fun invdocc --ho-prim-enum tf --ho-prim-enum-early-bird true --tptp-def-as-rewrite --ho-unif-level pragmatic-framework -q '1|const|conjecture-relative-var(1,s,f)' -q '1|prefer-processed|pnrefined(1,1,1,2,2,2,0.5)' -q '1|prefer-sos|staggered(1)' -q '2|prefer-fo|default' -q '1|prefer-neg-unit|orient-lmax(2,1,2,1,1)' -q '2|prefer-easy-ho|conjecture-relative-struct(1.5,3.5,2,3)' --ho-elim-leibniz 2 --ho-fixpoint-decider true --ho-pattern-decider false --ho-solid-decider true --ho-max-solidification 12  --select e-selection11 --solve-formulas true --sup-at-vars false --sup-at-var-headed false --lazy-cnf true --lazy-cnf-kind simp --lazy-cnf-renaming-threshold 4 --sine 50 --sine-tolerance 1.7 --sine-depth-max 3 --sine-depth-min 1 --sine-trim-implications true --ho-selection-restriction none --sup-from-var-headed false --sine-trim-implications true"
-val zipperposition_s6 = "--tptp-def-as-rewrite --rewrite-before-cnf true --mode ho-competitive --boolean-reasoning no-cases --ext-rules off --ho-prim-enum none --recognize-injectivity true --ho-elim-leibniz off --ho-unif-level full-framework --no-max-vars -q '3|const|conjecture-relative-var(1.02,l,f)' -q '1|prefer-ho-steps|conjecture-relative-var(1,s,f)' -q '1|prefer-processed|fifo' -q '3|by-app-var-num|pnrefined(2,1,1,1,2,2,2)' --select ho-selection5 --prec-gen-fun unary_first --solid-subsumption false --ignore-orphans false --ho-solid-decider true --ho-fixpoint-decider true --ho-pattern-decider true --sup-at-vars false --sup-at-var-headed false --sup-from-var-headed false --ho-neg-ext-simpl true"
-val zipperposition_cdots = "--mode ho-competitive --boolean-reasoning cases-simpl --ext-rules ext-family --ext-rules-max-depth 1 --ho-prim-enum pragmatic --ho-prim-max 1 --bool-subterm-selection A --avatar off --recognize-injectivity true --ho-elim-leibniz 1 --ho-unif-level full-framework --no-max-vars -q '6|prefer-sos|pnrefined(1,1,1,2,2,2,0.5)' -q '6|const|conjecture-relative-var(1.02,l,f)' -q '1|prefer-processed|fifo' -q '1|prefer-non-goals|conjecture-relative-var(1,l,f)' -q '4|prefer-easy-ho|conjecture-relative-var(1.01,s,f)' --select e-selection7 --ho-choice-inst true --sine 50 --sine-tolerance 2 --sine-depth-max 4 --sine-depth-min 1 --scan-clause-ac true --lambdasup 0 --kbo-weight-fun invfreqrank"
+val zipperposition_blsimp = "--mode ho-pragmatic --max-inferences 3 --ho-max-app-projections 0 --ho-max-elims 0 --ho-max-rigid-imitations 2 --ho-max-identifications 0 --ho-unif-max-depth 2 --boolean-reasoning simpl-only --ext-rules ext-family --ext-rules-max-depth 1 --kbo-weight-fun invdocc --ho-prim-enum tf --ho-prim-enum-early-bird true --tptp-def-as-rewrite --ho-unif-level pragmatic-framework -q '1|const|conjecture-relative-var(1,s,f)' -q '1|prefer-processed|pnrefined(1,1,1,2,2,2,0.5)' -q '1|prefer-sos|staggered(1)' -q '2|prefer-fo|default' -q '1|prefer-neg-unit|orient-lmax(2,1,2,1,1)' -q '2|prefer-easy-ho|conjecture-relative-struct(1.5,3.5,2,3)' --ho-elim-leibniz 2 --ho-fixpoint-decider true --ho-pattern-decider false --ho-solid-decider true --ho-max-solidification 12  --select e-selection11 --solve-formulas true --sup-at-vars false --sup-at-var-headed false --lazy-cnf true --lazy-cnf-kind simp --lazy-cnf-renaming-threshold 4 --sine 50 --sine-tolerance 1.7 --sine-depth-max 3 --sine-depth-min 1 --sine-trim-implications true --ho-selection-restriction none --sup-from-var-headed false --sine-trim-implications true"
+val zipperposition_s6 = "--tptp-def-as-rewrite --rewrite-before-cnf true --mode ho-competitive --boolean-reasoning simpl-only --ext-rules off --ho-prim-enum none --recognize-injectivity true --ho-elim-leibniz off --ho-unif-level full-framework --no-max-vars -q '3|const|conjecture-relative-var(1.02,l,f)' -q '1|prefer-ho-steps|conjecture-relative-var(1,s,f)' -q '1|prefer-processed|fifo' -q '3|by-app-var-num|pnrefined(2,1,1,1,2,2,2)' --select ho-selection5 --prec-gen-fun unary_first --solid-subsumption false --ignore-orphans false --ho-solid-decider true --ho-fixpoint-decider true --ho-pattern-decider true --sup-at-vars false --sup-at-var-headed false --sup-from-var-headed false --ho-neg-ext-simpl true"
+val zipperposition_cdots = "--mode ho-competitive --boolean-reasoning simpl-only --ext-rules ext-family --ext-rules-max-depth 1 --ho-prim-enum pragmatic --ho-prim-max 1 --avatar off --recognize-injectivity true --ho-elim-leibniz 1 --ho-unif-level full-framework --no-max-vars -q '6|prefer-sos|pnrefined(1,1,1,2,2,2,0.5)' -q '6|const|conjecture-relative-var(1.02,l,f)' -q '1|prefer-processed|fifo' -q '1|prefer-non-goals|conjecture-relative-var(1,l,f)' -q '4|prefer-easy-ho|conjecture-relative-var(1.01,s,f)' --select e-selection7 --ho-choice-inst true --sine 50 --sine-tolerance 2 --sine-depth-max 4 --sine-depth-min 1 --scan-clause-ac true --lambdasup 0 --kbo-weight-fun invfreqrank"
 
 val zipperposition_config : atp_config =
   let

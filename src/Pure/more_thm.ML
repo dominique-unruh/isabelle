@@ -12,8 +12,6 @@ sig
   val show_consts: bool Config.T
   val show_hyps: bool Config.T
   val show_tags: bool Config.T
-  structure Ctermtab: TABLE
-  structure Thmtab: TABLE
   val aconvc: cterm * cterm -> bool
   type attribute = Context.generic * thm -> Context.generic option * thm option
 end;
@@ -21,13 +19,10 @@ end;
 signature THM =
 sig
   include THM
-  structure Ctermtab: TABLE
-  structure Thmtab: TABLE
   val eq_ctyp: ctyp * ctyp -> bool
   val aconvc: cterm * cterm -> bool
-  val add_tvars: thm -> ctyp list -> ctyp list
-  val add_frees: thm -> cterm list -> cterm list
-  val add_vars: thm -> cterm list -> cterm list
+  val add_tvars: thm -> ctyp TVars.table -> ctyp TVars.table
+  val add_vars: thm -> cterm Vars.table -> cterm Vars.table
   val dest_funT: ctyp -> ctyp * ctyp
   val strip_type: ctyp -> ctyp list * ctyp
   val all_name: Proof.context -> string * cterm -> cterm -> cterm
@@ -40,11 +35,6 @@ sig
   val dest_equals_rhs: cterm -> cterm
   val lhs_of: thm -> cterm
   val rhs_of: thm -> cterm
-  val fast_term_ord: cterm ord
-  val term_ord: cterm ord
-  val thm_ord: thm ord
-  val cterm_cache: (cterm -> 'a) -> cterm -> 'a
-  val thm_cache: (thm -> 'a) -> thm -> 'a
   val is_reflexive: thm -> bool
   val eq_thm: thm * thm -> bool
   val eq_thm_prop: thm * thm -> bool
@@ -73,9 +63,10 @@ sig
   val forall_intr_name: string * cterm -> thm -> thm
   val forall_elim_var: int -> thm -> thm
   val forall_elim_vars: int -> thm -> thm
-  val instantiate_frees: ((string * sort) * ctyp) list * ((string * typ) * cterm) list -> thm -> thm
+  val instantiate_frees: ctyp TFrees.table * cterm Frees.table -> thm -> thm
   val instantiate': ctyp option list -> cterm option list -> thm -> thm
   val forall_intr_frees: thm -> thm
+  val forall_intr_vars: thm -> thm
   val unvarify_global: theory -> thm -> thm
   val unvarify_axiom: theory -> string -> thm
   val rename_params_rule: string list * int -> thm -> thm
@@ -137,9 +128,15 @@ struct
 val eq_ctyp = op = o apply2 Thm.typ_of;
 val op aconvc = op aconv o apply2 Thm.term_of;
 
-val add_tvars = Thm.fold_atomic_ctyps (fn a => is_TVar (Thm.typ_of a) ? insert eq_ctyp a);
-val add_frees = Thm.fold_atomic_cterms (fn a => is_Free (Thm.term_of a) ? insert (op aconvc) a);
-val add_vars = Thm.fold_atomic_cterms (fn a => is_Var (Thm.term_of a) ? insert (op aconvc) a);
+val add_tvars =
+  Thm.fold_atomic_ctyps {hyps = false} Term.is_TVar (fn cT => fn tab =>
+    let val v = Term.dest_TVar (Thm.typ_of cT)
+    in tab |> not (TVars.defined tab v) ? TVars.add (v, cT) end);
+
+val add_vars =
+  Thm.fold_atomic_cterms {hyps = false} Term.is_Var (fn ct => fn tab =>
+    let val v = Term.dest_Var (Thm.term_of ct)
+    in tab |> not (Vars.defined tab v) ? Vars.add (v, ct) end);
 
 
 (* ctyp operations *)
@@ -197,36 +194,12 @@ val lhs_of = dest_equals_lhs o Thm.cprop_of;
 val rhs_of = dest_equals_rhs o Thm.cprop_of;
 
 
-(* certified term order *)
-
-val fast_term_ord = Term_Ord.fast_term_ord o apply2 Thm.term_of;
-val term_ord = Term_Ord.term_ord o apply2 Thm.term_of;
-
-
-(* thm order: ignores theory context! *)
-
-val thm_ord =
-  Term_Ord.fast_term_ord o apply2 Thm.prop_of
-  ||| list_ord (prod_ord Term_Ord.fast_term_ord Term_Ord.fast_term_ord) o apply2 Thm.tpairs_of
-  ||| list_ord Term_Ord.fast_term_ord o apply2 Thm.hyps_of
-  ||| list_ord Term_Ord.sort_ord o apply2 Thm.shyps_of;
-
-
-(* tables and caches *)
-
-structure Ctermtab = Table(type key = cterm val ord = fast_term_ord);
-structure Thmtab = Table(type key = thm val ord = thm_ord);
-
-fun cterm_cache f = Cache.create Ctermtab.empty Ctermtab.lookup Ctermtab.update f;
-fun thm_cache f = Cache.create Thmtab.empty Thmtab.lookup Thmtab.update f;
-
-
 (* equality *)
 
 fun is_reflexive th = op aconv (Logic.dest_equals (Thm.prop_of th))
   handle TERM _ => false;
 
-val eq_thm = is_equal o thm_ord;
+val eq_thm = is_equal o Thm.thm_ord;
 
 val eq_thm_prop = op aconv o apply2 Thm.full_prop_of;
 
@@ -378,7 +351,7 @@ fun dest_all_list ct =
 fun forall_elim_vars_list vars i th =
   let
     val used =
-      (Thm.fold_terms o Term.fold_aterms)
+      (Thm.fold_terms {hyps = false} o Term.fold_aterms)
         (fn Var ((x, j), _) => if i = j then insert (op =) x else I | _ => I) th [];
     val vars' = (Name.variant_list used (map #1 vars), vars)
       |> ListPair.map (fn (x, (_, T)) => Thm.var ((x, i), T));
@@ -402,26 +375,29 @@ end;
 
 (* instantiate frees *)
 
-fun instantiate_frees ([], []) th = th
-  | instantiate_frees (instT, inst) th =
-      let
-        val idx = Thm.maxidx_of th + 1;
-        fun index ((a, A), b) = (((a, idx), A), b);
-        val insts = (map index instT, map index inst);
-        val tfrees = fold (Symtab.insert_set o #1 o #1) instT Symtab.empty;
-        val frees = fold (Symtab.insert_set o #1 o #1) inst Symtab.empty;
+fun instantiate_frees (instT, inst) th =
+  if TFrees.is_empty instT andalso Frees.is_empty inst then th
+  else
+    let
+      val idx = Thm.maxidx_of th + 1;
+      fun index ((a, A), b) = (((a, idx), A), b);
+      val insts =
+        (TVars.build (TFrees.fold (TVars.add o index) instT),
+         Vars.build (Frees.fold (Vars.add o index) inst));
+      val tfrees = Names.build (TFrees.fold (Names.add_set o #1 o #1) instT);
+      val frees = Names.build (Frees.fold (Names.add_set o #1 o #1) inst);
 
-        val hyps = Thm.chyps_of th;
-        val inst_cterm =
-          Thm.generalize_cterm (tfrees, frees) idx #>
-          Thm.instantiate_cterm insts;
-      in
-        th
-        |> fold_rev Thm.implies_intr hyps
-        |> Thm.generalize (tfrees, frees) idx
-        |> Thm.instantiate insts
-        |> fold (elim_implies o Thm.assume o inst_cterm) hyps
-      end;
+      val hyps = Thm.chyps_of th;
+      val inst_cterm =
+        Thm.generalize_cterm (tfrees, frees) idx #>
+        Thm.instantiate_cterm insts;
+    in
+      th
+      |> fold_rev Thm.implies_intr hyps
+      |> Thm.generalize (tfrees, frees) idx
+      |> Thm.instantiate insts
+      |> fold (elim_implies o Thm.assume o inst_cterm) hyps
+    end;
 
 
 (* instantiate by left-to-right occurrence of variables *)
@@ -437,25 +413,29 @@ fun instantiate' cTs cts thm =
       zip_options xs ys handle ListPair.UnequalLengths =>
         err "more instantiations than variables in thm";
 
-    val thm' =
-      Thm.instantiate ((zip_vars (rev (Thm.fold_terms Term.add_tvars thm [])) cTs), []) thm;
-    val thm'' =
-      Thm.instantiate ([], zip_vars (rev (Thm.fold_terms Term.add_vars thm' [])) cts) thm';
-  in thm'' end;
+    val instT = zip_vars (build_rev (Thm.fold_terms {hyps = false} Term.add_tvars thm)) cTs;
+    val thm' = Thm.instantiate (TVars.make instT, Vars.empty) thm;
+    val inst = zip_vars (build_rev (Thm.fold_terms {hyps = false} Term.add_vars thm')) cts;
+  in Thm.instantiate (TVars.empty, Vars.make inst) thm' end;
 
 
-(* forall_intr_frees: generalization over all suitable Free variables *)
+(* implicit generalization over variables -- canonical order *)
+
+fun forall_intr_vars th =
+  let val vars = Cterms.build (Cterms.add_vars th)
+  in fold_rev Thm.forall_intr (Cterms.list_set vars) th end;
 
 fun forall_intr_frees th =
   let
     val fixed =
-      fold Term.add_frees (Thm.terms_of_tpairs (Thm.tpairs_of th) @ Thm.hyps_of th) [];
+      Frees.build
+       (fold Frees.add_frees (Thm.terms_of_tpairs (Thm.tpairs_of th)) #>
+        fold Frees.add_frees (Thm.hyps_of th));
+    val is_fixed = Frees.defined fixed o Term.dest_Free o Thm.term_of;
     val frees =
-      Thm.fold_atomic_cterms (fn a =>
-        (case Thm.term_of a of
-          Free v => not (member (op =) fixed v) ? insert (op aconvc) a
-        | _ => I)) th [];
-  in fold Thm.forall_intr frees th end;
+      Cterms.build (th |> Thm.fold_atomic_cterms {hyps = false} Term.is_Free
+        (fn ct => not (is_fixed ct) ? Cterms.add_set ct));
+  in fold_rev Thm.forall_intr (Cterms.list_set frees) th end;
 
 
 (* unvarify_global: global schematic variables *)
@@ -466,11 +446,27 @@ fun unvarify_global thy th =
     val _ = map Logic.unvarify_global (prop :: Thm.hyps_of th)
       handle TERM (msg, _) => raise THM (msg, 0, [th]);
 
-    val instT = rev (Term.add_tvars prop []) |> map (fn v as ((a, _), S) => (v, TFree (a, S)));
-    val inst = rev (Term.add_vars prop []) |> map (fn ((a, i), T) =>
-      let val T' = Term_Subst.instantiateT instT T
-      in (((a, i), T'), Thm.global_cterm_of thy (Free ((a, T')))) end);
-  in Thm.instantiate (map (apsnd (Thm.global_ctyp_of thy)) instT, inst) th end;
+    val cert = Thm.global_cterm_of thy;
+    val certT = Thm.global_ctyp_of thy;
+
+    val instT =
+      TVars.build (prop |> (Term.fold_types o Term.fold_atyps)
+        (fn T => fn instT =>
+          (case T of
+            TVar (v as ((a, _), S)) =>
+              if TVars.defined instT v then instT
+              else TVars.add (v, TFree (a, S)) instT
+          | _ => instT)));
+    val cinstT = TVars.map (K certT) instT;
+    val cinst =
+      Vars.build (prop |> Term.fold_aterms
+        (fn t => fn inst =>
+          (case t of
+            Var ((x, i), T) =>
+              let val T' = Term_Subst.instantiateT instT T
+              in Vars.add (((x, i), T'), cert (Free ((x, T')))) inst end
+          | _ => inst)));
+  in Thm.instantiate (cinstT, cinst) th end;
 
 fun unvarify_axiom thy = unvarify_global thy o Thm.axiom thy;
 
@@ -514,7 +510,7 @@ fun rename_boundvars pat obj th =
 
 fun stripped_sorts thy t =
   let
-    val tfrees = rev (Term.add_tfrees t []);
+    val tfrees = build_rev (Term.add_tfrees t);
     val tfrees' = map (fn a => (a, [])) (Name.variant_list [] (map #1 tfrees));
     val recover =
       map2 (fn (a', S') => fn (a, S) => (((a', 0), S'), Thm.global_ctyp_of thy (TVar ((a, 0), S))))
@@ -535,7 +531,7 @@ fun add_axiom ctxt (b, prop) thy =
     val axm_name = Sign.full_name thy' b;
     val axm' = Thm.axiom thy' axm_name;
     val thm =
-      Thm.instantiate (recover, []) axm'
+      Thm.instantiate (TVars.make recover, Vars.empty) axm'
       |> unvarify_global thy'
       |> fold elim_implies of_sorts;
   in ((axm_name, thm), thy') end;
@@ -552,7 +548,7 @@ fun add_def (context as (ctxt, _)) unchecked overloaded (b, prop) thy =
     val axm_name = Sign.full_name thy' b;
     val axm' = Thm.axiom thy' axm_name;
     val thm =
-      Thm.instantiate (recover, []) axm'
+      Thm.instantiate (TVars.make recover, Vars.empty) axm'
       |> unvarify_global thy'
       |> fold_rev Thm.implies_intr prems;
   in ((axm_name, thm), thy') end;
