@@ -13,7 +13,8 @@ jdk-17+35
 jedit-20210802
 jfreechart-1.5.3
 jortho-1.0-2
-kodkodi-1.5.6-1
+kodkodi-1.5.7
+minisat-2.2.1
 nunchaku-0.5
 opam-2.0.7
 polyml-5.8.2
@@ -24,8 +25,8 @@ spass-3.8ds-2
 sqlite-jdbc-3.36.0.3
 ssh-java-20190323
 stack-2.7.3
-vampire-4.5.1-1
-verit-2021.06-rmx
+vampire-4.6
+verit-2021.06-rmx-1
 xz-java-1.9
 z3-4.4.0pre-3
 zipperposition-2.1-1

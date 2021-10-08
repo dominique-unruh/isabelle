@@ -144,6 +144,15 @@ targets and in any nested target built on top of a target supporting
 
 *** HOL ***
 
+* Theory "HOL-Analysis.Infinite_Sum": new theory for infinite sums with
+a more general definition than the existing theory Infinite_Set_Sum.
+(Infinite_Set_Sum contains theorems relating the two definitions.)
+
+* Theory "HOL-Analysis.Product_Vector": Instantiation of the product of
+uniform spaces as a uniform space. Minor INCOMPATIBILITY: the old
+definition "uniformity_prod_def" is available as a derived fact
+"uniformity_dist".
+
 * Theorems "antisym" and "eq_iff" in class "order" have been renamed to
 "order.antisym" and "order.eq_iff", to coexist locally with "antisym"
 and "eq_iff" from locale "ordering". INCOMPATIBILITY: significant
@@ -192,11 +201,12 @@ INCOMPATIBILITY.
 * Sledgehammer:
   - Update of bundled provers:
       E 2.6
-      Vampire 4.5.1 (with Open Source license)
+      Vampire 4.6 (with Open Source license)
       veriT 2021.06-rmx
       Zipperposition 2.1
   - Adjusted default provers:
       cvc4 vampire verit e spass z3 zipperposition
+  - Adjusted Zipperposition's slicing.
   - Removed legacy "lam_lifting" (synonym for "lifting") from option
     "lam_trans". Minor INCOMPATIBILITY.
   - Renamed "hide_lams" to "opaque_lifting" in option "lam_trans". Minor
@@ -205,8 +215,16 @@ INCOMPATIBILITY.
     rewritten using combinators, but the combinators are kept opaque,
     i.e. without definitions.
 
-* Metis: Renamed option "hide_lams" to "opaque_lifting". Minor
-INCOMPATIBILITY.
+* Nitpick:
+  - External solver "MiniSat" is available for all supported Isabelle
+    platforms (including Windows and ARM); while "MiniSat_JNI" only
+    works for Intel Linux and macOS.
+
+* Metis:
+  - Renamed option "hide_lams" to "opaque_lifting". Minor INCOMPATIBILITY.
+  - Updated the Metis prover underlying the "metis" proof method to
+    version 2.4 (release 20200713). The new version fixes one
+    implementation defect. Very slight INCOMPATIBILITY.
 
 * Theory HOL-Library.Lattice_Syntax has been superseded by bundle
 "lattice_syntax": it can be used in a local context via 'include' or in
@@ -251,15 +269,6 @@ before were corrected. Minor INCOMPATIBILITY.
 * Session "HOL-Analysis": the complex Arg function has been identified
 with the function "arg" of Complex_Main, renaming arg ~> Arg also in the
 names of arg_bounded. Minor INCOMPATIBILITY.
-
-* Theory "HOL-Analysis.Infinite_Sum": new theory for infinite sums with
-a more general definition than the existing theory Infinite_Set_Sum.
-(Infinite_Set_Sum contains theorems relating the two definitions.)
-
-* Theory "HOL-Analysis.Product_Vector": Instantiation of the product of
-uniform spaces as a uniform space. Minor INCOMPATIBILITY: the old
-definition "uniformity_prod_def" is available as a derived fact
-"uniformity_dist".
 
 * Theory "HOL-Library.Permutation" has been renamed to the more specific
 "HOL-Library.List_Permutation". Note that most notions from that theory
@@ -417,6 +426,12 @@ Isabelle2021:
 *** System ***
 
 * Update to OpenJDK 17: the current long-term support version of Java.
+
+* Perl is no longer required by Isabelle proper, and longer provided by
+specific Isabelle execution environments (Docker, Cygwin on Windows).
+Minor INCOMPATIBILITY, add-on applications involving perl need to
+provide it by different means. (Note that proper Isabelle systems
+programming works via Scala/Java, without perl, python, ruby etc.).
 
 * Each Isabelle component may specify a Scala/Java jar module
 declaratively via etc/build.props (file names are relative to the
