@@ -90,6 +90,7 @@ sig
   val report: text_range -> unit
   val parser: int -> text_range parser
   val parse: text_range parser
+  val parse_by: ((text_range * text_range option) * Position.report list) parser
   val read: Proof.context -> Token.src -> text
   val read_closure: Proof.context -> Token.src -> text * Token.src
   val read_closure_input: Proof.context -> Input.source -> text * Token.src
@@ -294,7 +295,6 @@ structure Data = Generic_Data
     facts: thm list option};
   val empty : T =
     {methods = Name_Space.empty_table Markup.methodN, ml_tactic = NONE, facts = NONE};
-  val extend = I;
   fun merge
     ({methods = methods1, ml_tactic = ml_tactic1, facts = facts1},
      {methods = methods2, ml_tactic = ml_tactic2, facts = facts2}) : T =
@@ -425,6 +425,11 @@ fun check_text ctxt (Source src) = Source (check_src ctxt src)
 fun checked_text (Source src) = Token.checked_src src
   | checked_text (Basic _) = true
   | checked_text (Combinator (_, _, body)) = forall checked_text body;
+
+val _ = Theory.setup
+ (ML_Antiquotation.inline_embedded \<^binding>\<open>method\<close>
+    (Args.context -- Scan.lift Parse.embedded_position >>
+      (ML_Syntax.print_string o uncurry check_name)));
 
 
 (* method setup *)
@@ -718,6 +723,10 @@ val parse = parser 4;
 
 end;
 
+val parse_by =
+  Parse.$$$ "by" |-- parse -- Scan.option parse
+    >> (fn (m1, m2) => ((m1, m2), maps reports_of (m1 :: the_list m2)));
+
 
 (* read method text *)
 
@@ -735,12 +744,9 @@ fun read_closure ctxt src0 =
     val src2 = map Token.closure src1;
   in (text, src2) end;
 
-fun read_closure_input ctxt input =
-  let val syms = Input.source_explode input in
-    (case Token.read_body (Thy_Header.get_keywords' ctxt) (Scan.many Token.not_eof) syms of
-      SOME res => read_closure ctxt res
-    | NONE => error ("Bad input" ^ Position.here (Input.pos_of input)))
-  end;
+fun read_closure_input ctxt =
+  let val keywords = Keyword.no_major_keywords (Thy_Header.get_keywords' ctxt)
+  in Parse.read_embedded ctxt keywords (Scan.many Token.not_eof) #> read_closure ctxt end;
 
 val text_closure =
   Args.context -- Scan.lift (Parse.token Parse.text) >> (fn (ctxt, tok) =>

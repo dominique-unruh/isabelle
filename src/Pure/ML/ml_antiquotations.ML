@@ -1,16 +1,16 @@
-(*  Title:      Pure/ML/ml_antiquotations1.ML
+(*  Title:      Pure/ML/ml_antiquotations.ML
     Author:     Makarius
 
-Miscellaneous ML antiquotations: part 1.
+Miscellaneous ML antiquotations.
 *)
 
-signature ML_ANTIQUOTATIONS1 =
+signature ML_ANTIQUOTATIONS =
 sig
   val make_judgment: Proof.context -> term -> term
   val dest_judgment: Proof.context -> term -> term
 end;
 
-structure ML_Antiquotations1: ML_ANTIQUOTATIONS1 =
+structure ML_Antiquotations: ML_ANTIQUOTATIONS =
 struct
 
 (* ML support *)
@@ -23,7 +23,7 @@ val _ = Theory.setup
     (Scan.succeed "(fn b => if b then () else raise General.Fail \"Assertion failed\")") #>
 
   ML_Antiquotation.declaration_embedded \<^binding>\<open>print\<close>
-    (Scan.lift (Scan.optional Args.embedded "Output.writeln"))
+    (Scan.lift (Scan.optional Parse.embedded "Output.writeln"))
       (fn src => fn output => fn ctxt =>
         let
           val struct_name = ML_Context.struct_name ctxt;
@@ -52,18 +52,18 @@ val _ = Theory.setup
 
 val _ = Theory.setup
  (ML_Antiquotation.value_embedded \<^binding>\<open>system_option\<close>
-    (Args.context -- Scan.lift Args.embedded_position >> (fn (ctxt, (name, pos)) =>
+    (Args.context -- Scan.lift Parse.embedded_position >> (fn (ctxt, (name, pos)) =>
       (Completion.check_option (Options.default ()) ctxt (name, pos) |> ML_Syntax.print_string))) #>
 
   ML_Antiquotation.value_embedded \<^binding>\<open>theory\<close>
-    (Args.context -- Scan.lift Args.embedded_position >> (fn (ctxt, (name, pos)) =>
+    (Args.context -- Scan.lift Parse.embedded_position >> (fn (ctxt, (name, pos)) =>
       (Theory.check {long = false} ctxt (name, pos);
        "Context.get_theory {long = false} (Proof_Context.theory_of ML_context) " ^
         ML_Syntax.print_string name))
     || Scan.succeed "Proof_Context.theory_of ML_context") #>
 
   ML_Antiquotation.value_embedded \<^binding>\<open>theory_context\<close>
-    (Args.context -- Scan.lift Args.embedded_position >> (fn (ctxt, (name, pos)) =>
+    (Args.context -- Scan.lift Parse.embedded_position >> (fn (ctxt, (name, pos)) =>
       (Theory.check {long = false} ctxt (name, pos);
        "Proof_Context.get_global (Proof_Context.theory_of ML_context) " ^
         ML_Syntax.print_string name))) #>
@@ -90,33 +90,13 @@ val _ = Theory.setup
     "Thm.cterm_of ML_context " ^ ML_Syntax.atomic (ML_Syntax.print_term t))) #>
 
   ML_Antiquotation.inline_embedded \<^binding>\<open>oracle_name\<close>
-    (Args.context -- Scan.lift Args.embedded_position >> (fn (ctxt, (name, pos)) =>
+    (Args.context -- Scan.lift Parse.embedded_position >> (fn (ctxt, (name, pos)) =>
       ML_Syntax.print_string (Thm.check_oracle ctxt (name, pos)))));
-
-
-(* schematic variables *)
-
-val schematic_input =
-  Args.context -- Scan.lift Args.embedded_input >> (fn (ctxt, src) =>
-    (Proof_Context.set_mode Proof_Context.mode_schematic ctxt,
-      (Syntax.implode_input src, Input.pos_of src)));
-
-val _ = Theory.setup
-  (ML_Antiquotation.inline_embedded \<^binding>\<open>tvar\<close>
-    (schematic_input >> (fn (ctxt, (s, pos)) =>
-      (case Syntax.read_typ ctxt s of
-        TVar v => ML_Syntax.print_pair ML_Syntax.print_indexname ML_Syntax.print_sort v
-      | _ => error ("Schematic type variable expected" ^ Position.here pos)))) #>
-   ML_Antiquotation.inline_embedded \<^binding>\<open>var\<close>
-    (schematic_input >> (fn (ctxt, (s, pos)) =>
-      (case Syntax.read_term ctxt s of
-        Var v => ML_Syntax.print_pair ML_Syntax.print_indexname ML_Syntax.print_typ v
-      | _ => error ("Schematic variable expected" ^ Position.here pos)))));
 
 
 (* type classes *)
 
-fun class syn = Args.context -- Scan.lift Args.embedded_inner_syntax >> (fn (ctxt, s) =>
+fun class syn = Args.context -- Scan.lift Parse.embedded_inner_syntax >> (fn (ctxt, s) =>
   Proof_Context.read_class ctxt s
   |> syn ? Lexicon.mark_class
   |> ML_Syntax.print_string);
@@ -126,13 +106,13 @@ val _ = Theory.setup
   ML_Antiquotation.inline_embedded \<^binding>\<open>class_syntax\<close> (class true) #>
 
   ML_Antiquotation.inline_embedded \<^binding>\<open>sort\<close>
-    (Args.context -- Scan.lift Args.embedded_inner_syntax >> (fn (ctxt, s) =>
+    (Args.context -- Scan.lift Parse.embedded_inner_syntax >> (fn (ctxt, s) =>
       ML_Syntax.atomic (ML_Syntax.print_sort (Syntax.read_sort ctxt s)))));
 
 
 (* type constructors *)
 
-fun type_name kind check = Args.context -- Scan.lift Args.embedded_token
+fun type_name kind check = Args.context -- Scan.lift (Parse.token Parse.embedded)
   >> (fn (ctxt, tok) =>
     let
       val s = Token.inner_syntax_of tok;
@@ -158,7 +138,7 @@ val _ = Theory.setup
 
 (* constants *)
 
-fun const_name check = Args.context -- Scan.lift Args.embedded_token
+fun const_name check = Args.context -- Scan.lift (Parse.token Parse.embedded)
   >> (fn (ctxt, tok) =>
     let
       val s = Token.inner_syntax_of tok;
@@ -177,11 +157,11 @@ val _ = Theory.setup
     (const_name (fn (_, c) => Lexicon.mark_const c)) #>
 
   ML_Antiquotation.inline_embedded \<^binding>\<open>syntax_const\<close>
-    (Args.context -- Scan.lift Args.embedded_position >> (fn (ctxt, arg) =>
+    (Args.context -- Scan.lift Parse.embedded_position >> (fn (ctxt, arg) =>
       ML_Syntax.print_string (Proof_Context.check_syntax_const ctxt arg))) #>
 
   ML_Antiquotation.inline_embedded \<^binding>\<open>const\<close>
-    (Args.context -- Scan.lift (Parse.position Args.embedded_inner_syntax) -- Scan.optional
+    (Args.context -- Scan.lift (Parse.position Parse.embedded_inner_syntax) -- Scan.optional
         (Scan.lift (Args.$$$ "(") |-- Parse.enum1' "," Args.typ --| Scan.lift (Args.$$$ ")")) []
       >> (fn ((ctxt, (raw_c, pos)), Ts) =>
         let
@@ -214,43 +194,21 @@ fun dest_judgment ctxt =
 
 val _ = Theory.setup
  (ML_Antiquotation.value \<^binding>\<open>make_judgment\<close>
-   (Scan.succeed "ML_Antiquotations1.make_judgment ML_context") #>
+   (Scan.succeed "ML_Antiquotations.make_judgment ML_context") #>
   ML_Antiquotation.value \<^binding>\<open>dest_judgment\<close>
-   (Scan.succeed "ML_Antiquotations1.dest_judgment ML_context"));
+   (Scan.succeed "ML_Antiquotations.dest_judgment ML_context"));
 
 
 (* type/term constructors *)
 
 local
 
-fun read_embedded ctxt src parse =
-  let
-    val keywords = Thy_Header.get_keywords' ctxt;
-    val input = #1 (Token.syntax (Scan.lift Args.embedded_input) src ctxt);
-    val syms = Input.source_explode input;
-  in
-    (case Token.read_body keywords parse syms of
-      SOME res => res
-    | NONE => error ("Bad input" ^ Position.here (Input.pos_of input)))
-  end;
-
-fun ml_args ctxt args =
-  let
-    val (decls, ctxt') = fold_map (ML_Context.expand_antiquotes) args ctxt;
-    fun decl' ctxt'' = map (fn decl => decl ctxt'') decls;
-  in (decl', ctxt') end
+val keywords = Keyword.add_minor_keywords ["for", "=>"] Keyword.empty_keywords;
 
 val parse_name = Parse.input Parse.name;
 
-val parse_arg =
-  Parse.input Parse.underscore >> ML_Lex.read_source ||
-  Parse.embedded_input >> ML_Lex.read_source ||
-  Parse.control >> (ML_Lex.read_symbols o Antiquote.control_symbols);
-
-val parse_args = Scan.repeat parse_arg;
-val parse_for_args =
-  Scan.optional ((Parse.position (Parse.$$$ "for") >> #2) -- Parse.!!! parse_args)
-    (Position.none, []);
+val parse_args = Scan.repeat Parse.embedded_ml_underscore;
+val parse_for_args = Scan.optional (Parse.$$$ "for" |-- Parse.!!! parse_args) [];
 
 fun parse_body b =
   if b then Parse.$$$ "=>" |-- Parse.!!! Parse.embedded_input >> (ML_Lex.read_source #> single)
@@ -274,8 +232,8 @@ fun type_antiquotation binding {function} =
   ML_Context.add_antiquotation binding true
     (fn range => fn src => fn ctxt =>
       let
-        val ((s, type_args), fn_body) =
-          read_embedded ctxt src (parse_name -- parse_args -- parse_body function);
+        val ((s, type_args), fn_body) = src
+          |> Parse.read_embedded_src ctxt keywords (parse_name -- parse_args -- parse_body function);
         val pos = Input.pos_of s;
 
         val Type (c, Ts) =
@@ -287,8 +245,8 @@ fun type_antiquotation binding {function} =
             error ("Type constructor " ^ quote (Proof_Context.markup_type ctxt c) ^
               " takes " ^ string_of_int n ^ " argument(s)" ^ Position.here pos);
 
-        val (decls1, ctxt1) = ml_args ctxt type_args;
-        val (decls2, ctxt2) = ml_args ctxt1 fn_body;
+        val (decls1, ctxt1) = ML_Context.expand_antiquotes_list type_args ctxt;
+        val (decls2, ctxt2) = ML_Context.expand_antiquotes_list fn_body ctxt1;
         fun decl' ctxt' =
           let
             val (ml_args_env, ml_args_body) = split_list (decls1 ctxt');
@@ -309,9 +267,9 @@ fun const_antiquotation binding {pattern, function} =
   ML_Context.add_antiquotation binding true
     (fn range => fn src => fn ctxt =>
       let
-        val (((s, type_args), (for_pos, term_args)), fn_body) =
-          read_embedded ctxt src (parse_name -- parse_args -- parse_for_args -- parse_body function);
-        val _ = Context_Position.report ctxt for_pos (Markup.keyword_properties Markup.keyword1);
+        val (((s, type_args), term_args), fn_body) = src
+          |> Parse.read_embedded_src ctxt keywords
+              (parse_name -- parse_args -- parse_for_args -- parse_body function);
 
         val Const (c, T) =
           Proof_Context.read_const {proper = true, strict = true} ctxt
@@ -333,9 +291,9 @@ fun const_antiquotation binding {pattern, function} =
           length term_args > m andalso Term.is_Type (Term.body_type T) andalso
             err (" cannot have more than " ^ string_of_int m ^ " argument(s)");
 
-        val (decls1, ctxt1) = ml_args ctxt type_args;
-        val (decls2, ctxt2) = ml_args ctxt1 term_args;
-        val (decls3, ctxt3) = ml_args ctxt2 fn_body;
+        val (decls1, ctxt1) = ML_Context.expand_antiquotes_list type_args ctxt;
+        val (decls2, ctxt2) = ML_Context.expand_antiquotes_list term_args ctxt1;
+        val (decls3, ctxt3) = ML_Context.expand_antiquotes_list fn_body ctxt2;
         fun decl' ctxt' =
           let
             val (ml_args_env1, ml_args_body1) = split_list (decls1 ctxt');

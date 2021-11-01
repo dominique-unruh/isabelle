@@ -174,10 +174,9 @@ fun prove_hyp tha thb =
 
 val pth = @{lemma "(((x::real) < y) \<equiv> (y - x > 0))" and "((x \<le> y) \<equiv> (y - x \<ge> 0))" and
      "((x = y) \<equiv> (x - y = 0))" and "((\<not>(x < y)) \<equiv> (x - y \<ge> 0))" and
-     "((\<not>(x \<le> y)) \<equiv> (x - y > 0))" and "((\<not>(x = y)) \<equiv> (x - y > 0 \<or> -(x - y) > 0))"
+     "((\<not>(x \<le> y)) \<equiv> (x - y > 0))"
   by (atomize (full), auto simp add: less_diff_eq le_diff_eq not_less)};
 
-val pth_final = @{lemma "(\<not>p \<Longrightarrow> False) \<Longrightarrow> p" by blast}
 val pth_add =
   @{lemma "(x = (0::real) \<Longrightarrow> y = 0 \<Longrightarrow> x + y = 0 )" and "( x = 0 \<Longrightarrow> y \<ge> 0 \<Longrightarrow> x + y \<ge> 0)" and
     "(x = 0 \<Longrightarrow> y > 0 \<Longrightarrow> x + y > 0)" and "(x \<ge> 0 \<Longrightarrow> y = 0 \<Longrightarrow> x + y \<ge> 0)" and
@@ -195,7 +194,6 @@ val pth_mul =
     mult_strict_mono[where b="x" and d="y" and a="0" and c="0", simplified])};
 
 val pth_emul = @{lemma "y = (0::real) \<Longrightarrow> x * y = 0"  by simp};
-val pth_square = @{lemma "x * x \<ge> (0::real)"  by simp};
 
 val weak_dnf_simps =
   List.take (@{thms simp_thms}, 34) @
@@ -260,17 +258,19 @@ val real_abs_thms1 = @{lemma
   "((a + b + min x y + c > r) = (a + b + x + c > r \<and> a + b + y + c > r))"
   by auto};
 
-val abs_split' = @{lemma "P \<bar>x::'a::linordered_idom\<bar> == (x \<ge> 0 \<and> P x \<or> x < 0 \<and> P (-x))"
-  by (atomize (full)) (auto split: abs_split)};
+val pth_abs =
+  @{lemma "P \<bar>x\<bar> \<equiv> (x \<ge> 0 \<and> P x \<or> x < 0 \<and> P (-x))" for x :: real
+    by (atomize (full)) (auto split: abs_split)}
 
-val max_split = @{lemma "P (max x y) \<equiv> ((x::'a::linorder) \<le> y \<and> P y \<or> x > y \<and> P x)"
-  by (atomize (full)) (cases "x \<le> y", auto simp add: max_def)};
+val pth_max =
+  @{lemma "P (max x y) \<equiv> (x \<le> y \<and> P y \<or> x > y \<and> P x)" for x y :: real
+    by (atomize (full)) (auto simp add: max_def)}
 
-val min_split = @{lemma "P (min x y) \<equiv> ((x::'a::linorder) \<le> y \<and> P x \<or> x > y \<and> P y)"
-  by (atomize (full)) (cases "x \<le> y", auto simp add: min_def)};
+val pth_min =
+  @{lemma "P (min x y) \<equiv> (x \<le> y \<and> P x \<or> x > y \<and> P y)" for x y :: real
+    by (atomize (full)) (auto simp add: min_def)}
 
-
-         (* Miscellaneous *)
+(* Miscellaneous *)
 fun literals_conv bops uops cv =
   let
     fun h t =
@@ -285,14 +285,16 @@ fun cterm_of_rat x =
     val (a, b) = Rat.dest x
   in
     if b = 1 then Numeral.mk_cnumber \<^ctyp>\<open>real\<close> a
-    else Thm.apply (Thm.apply \<^cterm>\<open>(/) :: real \<Rightarrow> _\<close>
-      (Numeral.mk_cnumber \<^ctyp>\<open>real\<close> a))
-      (Numeral.mk_cnumber \<^ctyp>\<open>real\<close> b)
+    else
+      \<^instantiate>\<open>
+          a = \<open>Numeral.mk_cnumber \<^ctyp>\<open>real\<close> a\<close> and
+          b = \<open>Numeral.mk_cnumber \<^ctyp>\<open>real\<close> b\<close>
+        in cterm \<open>a / b\<close> for a b :: real\<close>
   end;
 
 fun dest_ratconst t =
   case Thm.term_of t of
-    Const(\<^const_name>\<open>divide\<close>, _)$a$b => Rat.make(HOLogic.dest_number a |> snd, HOLogic.dest_number b |> snd)
+    \<^Const_>\<open>divide _ for a b\<close> => Rat.make(HOLogic.dest_number a |> snd, HOLogic.dest_number b |> snd)
   | _ => Rat.of_int (HOLogic.dest_number (Thm.term_of t) |> snd)
 fun is_ratconst t = can dest_ratconst t
 
@@ -308,19 +310,17 @@ fun find_cterm p t =
   if p t then t else
   case Thm.term_of t of
     _$_ => (find_cterm p (Thm.dest_fun t) handle CTERM _ => find_cterm p (Thm.dest_arg t))
-  | Abs (_,_,_) => find_cterm p (Thm.dest_abs NONE t |> snd)
+  | Abs (_,_,_) => find_cterm p (Thm.dest_abs_global t |> snd)
   | _ => raise CTERM ("find_cterm",[t]);
 
 fun is_comb t = (case Thm.term_of t of _ $ _ => true | _ => false);
 
-fun is_binop ct ct' = ct aconvc (Thm.dest_fun (Thm.dest_fun ct'))
-  handle CTERM _ => false;
-
 
 (* Map back polynomials to HOL.                         *)
 
-fun cterm_of_varpow x k = if k = 1 then x else Thm.apply (Thm.apply \<^cterm>\<open>(^) :: real \<Rightarrow> _\<close> x)
-  (Numeral.mk_cnumber \<^ctyp>\<open>nat\<close> k)
+fun cterm_of_varpow x k =
+  if k = 1 then x
+  else \<^instantiate>\<open>x and k = \<open>Numeral.mk_cnumber \<^ctyp>\<open>nat\<close> k\<close> in cterm \<open>x ^ k\<close> for x :: real\<close>
 
 fun cterm_of_monomial m =
   if FuncUtil.Ctermfunc.is_empty m then \<^cterm>\<open>1::real\<close>
@@ -328,13 +328,13 @@ fun cterm_of_monomial m =
     let
       val m' = FuncUtil.dest_monomial m
       val vps = fold_rev (fn (x,k) => cons (cterm_of_varpow x k)) m' []
-    in foldr1 (fn (s, t) => Thm.apply (Thm.apply \<^cterm>\<open>(*) :: real \<Rightarrow> _\<close> s) t) vps
+    in foldr1 (fn (s, t) => \<^instantiate>\<open>s and t in cterm \<open>s * t\<close> for s t :: real\<close>) vps
     end
 
 fun cterm_of_cmonomial (m,c) =
   if FuncUtil.Ctermfunc.is_empty m then cterm_of_rat c
   else if c = @1 then cterm_of_monomial m
-  else Thm.apply (Thm.apply \<^cterm>\<open>(*)::real \<Rightarrow> _\<close> (cterm_of_rat c)) (cterm_of_monomial m);
+  else \<^instantiate>\<open>x = \<open>cterm_of_rat c\<close> and y = \<open>cterm_of_monomial m\<close> in cterm \<open>x * y\<close> for x y :: real\<close>;
 
 fun cterm_of_poly p =
   if FuncUtil.Monomialfunc.is_empty p then \<^cterm>\<open>0::real\<close>
@@ -342,7 +342,7 @@ fun cterm_of_poly p =
     let
       val cms = map cterm_of_cmonomial
         (sort (prod_ord FuncUtil.monomial_order (K EQUAL)) (FuncUtil.Monomialfunc.dest p))
-    in foldr1 (fn (t1, t2) => Thm.apply(Thm.apply \<^cterm>\<open>(+) :: real \<Rightarrow> _\<close> t1) t2) cms
+    in foldr1 (fn (t1, t2) => \<^instantiate>\<open>t1 and t2 in cterm \<open>t1 + t2\<close> for t1 t2 :: real\<close>) cms
     end;
 
 (* A general real arithmetic prover *)
@@ -377,7 +377,7 @@ fun gen_gen_real_arith ctxt (mk_numeric,
       in Thm.transitive th' (oprconv poly_conv (Thm.rhs_of th'))
       end
     val [real_lt_conv, real_le_conv, real_eq_conv,
-         real_not_lt_conv, real_not_le_conv, _] =
+         real_not_lt_conv, real_not_le_conv] =
          map real_ineq_conv pth
     fun match_mp_rule ths ths' =
       let
@@ -391,7 +391,7 @@ fun gen_gen_real_arith ctxt (mk_numeric,
     fun emul_rule ct th = fconv_rule (arg_conv (oprconv poly_mul_conv))
        (Thm.instantiate' [] [SOME ct] (th RS pth_emul))
     fun square_rule t = fconv_rule (arg_conv (oprconv poly_conv))
-       (Thm.instantiate' [] [SOME t] pth_square)
+       \<^instantiate>\<open>x = t in lemma \<open>x * x \<ge> 0\<close> for x :: real by simp\<close>
 
     fun hol_of_positivstellensatz(eqs,les,lts) proof =
       let
@@ -400,15 +400,15 @@ fun gen_gen_real_arith ctxt (mk_numeric,
             Axiom_eq n => nth eqs n
           | Axiom_le n => nth les n
           | Axiom_lt n => nth lts n
-          | Rational_eq x => eqT_elim(numeric_eq_conv(Thm.apply \<^cterm>\<open>Trueprop\<close>
-                          (Thm.apply (Thm.apply \<^cterm>\<open>(=)::real \<Rightarrow> _\<close> (mk_numeric x))
-                               \<^cterm>\<open>0::real\<close>)))
-          | Rational_le x => eqT_elim(numeric_ge_conv(Thm.apply \<^cterm>\<open>Trueprop\<close>
-                          (Thm.apply (Thm.apply \<^cterm>\<open>(\<le>)::real \<Rightarrow> _\<close>
-                                     \<^cterm>\<open>0::real\<close>) (mk_numeric x))))
-          | Rational_lt x => eqT_elim(numeric_gt_conv(Thm.apply \<^cterm>\<open>Trueprop\<close>
-                      (Thm.apply (Thm.apply \<^cterm>\<open>(<)::real \<Rightarrow> _\<close> \<^cterm>\<open>0::real\<close>)
-                        (mk_numeric x))))
+          | Rational_eq x =>
+              eqT_elim (numeric_eq_conv
+                \<^instantiate>\<open>x = \<open>mk_numeric x\<close> in cprop \<open>x = 0\<close> for x :: real\<close>)
+          | Rational_le x =>
+              eqT_elim (numeric_ge_conv
+                \<^instantiate>\<open>x = \<open>mk_numeric x\<close> in cprop \<open>x \<ge> 0\<close> for x :: real\<close>)
+          | Rational_lt x =>
+              eqT_elim (numeric_gt_conv
+                \<^instantiate>\<open>x = \<open>mk_numeric x\<close> in cprop \<open>x > 0\<close> for x :: real\<close>)
           | Square pt => square_rule (cterm_of_poly pt)
           | Eqmul(pt,p) => emul_rule (cterm_of_poly pt) (translate p)
           | Sum(p1,p2) => add_rule (translate p1) (translate p2)
@@ -438,8 +438,8 @@ fun gen_gen_real_arith ctxt (mk_numeric,
           else error "disj_cases : conclusions not alpha convertible"
       in Thm.implies_elim (Thm.implies_elim
           (Thm.implies_elim (Thm.instantiate' [] (map SOME [p,q,c]) @{thm disjE}) th)
-          (Thm.implies_intr (Thm.apply \<^cterm>\<open>Trueprop\<close> p) th1))
-        (Thm.implies_intr (Thm.apply \<^cterm>\<open>Trueprop\<close> q) th2)
+          (Thm.implies_intr \<^instantiate>\<open>p in cprop p\<close> th1))
+        (Thm.implies_intr \<^instantiate>\<open>q in cprop q\<close> th2)
       end
     fun overall cert_choice dun ths =
       case ths of
@@ -472,17 +472,18 @@ fun gen_gen_real_arith ctxt (mk_numeric,
         if is_binop b ct then Thm.dest_binop ct
         else raise CTERM ("dest_binary",[b,ct])
     val dest_eq = dest_binary \<^cterm>\<open>(=) :: real \<Rightarrow> _\<close>
-    val neq_th = nth pth 5
     fun real_not_eq_conv ct =
       let
         val (l,r) = dest_eq (Thm.dest_arg ct)
-        val th = Thm.instantiate (TVars.empty, Vars.make [(\<^var>\<open>?x::real\<close>,l),(\<^var>\<open>?y::real\<close>,r)]) neq_th
+        val th =
+          \<^instantiate>\<open>x = l and y = r in lemma \<open>x \<noteq> y \<equiv> x - y > 0 \<or> - (x - y) > 0\<close> for x y :: real
+            by (atomize (full), auto simp add: less_diff_eq le_diff_eq not_less)\<close>;
         val th_p = poly_conv(Thm.dest_arg(Thm.dest_arg1(Thm.rhs_of th)))
         val th_x = Drule.arg_cong_rule \<^cterm>\<open>uminus :: real \<Rightarrow> _\<close> th_p
         val th_n = fconv_rule (arg_conv poly_neg_conv) th_x
         val th' = Drule.binop_cong_rule \<^cterm>\<open>HOL.disj\<close>
-          (Drule.arg_cong_rule (Thm.apply \<^cterm>\<open>(<)::real \<Rightarrow> _\<close> \<^cterm>\<open>0::real\<close>) th_p)
-          (Drule.arg_cong_rule (Thm.apply \<^cterm>\<open>(<)::real \<Rightarrow> _\<close> \<^cterm>\<open>0::real\<close>) th_n)
+          (Drule.arg_cong_rule \<^cterm>\<open>(<) (0::real)\<close> th_p)
+          (Drule.arg_cong_rule \<^cterm>\<open>(<) (0::real)\<close> th_n)
       in Thm.transitive th th'
       end
     fun equal_implies_1_rule PQ =
@@ -495,8 +496,8 @@ fun gen_gen_real_arith ctxt (mk_numeric,
       let
         fun h (acc, t) =
           case Thm.term_of t of
-            Const(\<^const_name>\<open>Ex\<close>,_)$Abs(_,_,_) =>
-              h (Thm.dest_abs NONE (Thm.dest_arg t) |>> (fn v => v::acc))
+            \<^Const_>\<open>Ex _ for \<open>Abs _\<close>\<close> =>
+              h (Thm.dest_abs_global (Thm.dest_arg t) |>> (fn v => v::acc))
           | _ => (acc,t)
       in fn t => h ([],t)
       end
@@ -508,58 +509,59 @@ fun gen_gen_real_arith ctxt (mk_numeric,
 
     fun mk_forall x th =
       let
-        val T = Thm.typ_of_cterm x
-        val all = Thm.cterm_of ctxt (Const (\<^const_name>\<open>All\<close>, (T --> \<^typ>\<open>bool\<close>) --> \<^typ>\<open>bool\<close>))
+        val T = Thm.ctyp_of_cterm x
+        val all = \<^instantiate>\<open>'a = T in cterm All\<close>
       in Drule.arg_cong_rule all (Thm.abstract_rule (name_of x) x th) end
 
     val specl = fold_rev (fn x => fn th => Thm.instantiate' [] [SOME x] (th RS spec));
 
-    fun ext T = Thm.cterm_of ctxt (Const (\<^const_name>\<open>Ex\<close>, (T --> \<^typ>\<open>bool\<close>) --> \<^typ>\<open>bool\<close>))
-    fun mk_ex v t = Thm.apply (ext (Thm.typ_of_cterm v)) (Thm.lambda v t)
+    fun mk_ex x t =
+      \<^instantiate>\<open>'a = \<open>Thm.ctyp_of_cterm x\<close> and P = \<open>Thm.lambda x t\<close>
+        in cprop \<open>Ex P\<close> for P :: \<open>'a \<Rightarrow> bool\<close>\<close>
 
-    fun choose v th th' =
+    fun choose x th th' =
       case Thm.concl_of th of
-        \<^term>\<open>Trueprop\<close> $ (Const(\<^const_name>\<open>Ex\<close>,_)$_) =>
-        let
-          val p = (funpow 2 Thm.dest_arg o Thm.cprop_of) th
-          val T = Thm.dest_ctyp0 (Thm.ctyp_of_cterm p)
-          val th0 = fconv_rule (Thm.beta_conversion true)
-            (Thm.instantiate' [SOME T] [SOME p, (SOME o Thm.dest_arg o Thm.cprop_of) th'] exE)
-          val pv = (Thm.rhs_of o Thm.beta_conversion true)
-            (Thm.apply \<^cterm>\<open>Trueprop\<close> (Thm.apply p v))
-          val th1 = Thm.forall_intr v (Thm.implies_intr pv th')
-        in Thm.implies_elim (Thm.implies_elim th0 th) th1  end
+        \<^Const_>\<open>Trueprop for \<^Const_>\<open>Ex _ for _\<close>\<close> =>
+          let
+            val P = Thm.dest_arg (Thm.dest_arg (Thm.cprop_of th))
+            val T = Thm.dest_ctyp0 (Thm.ctyp_of_cterm P)
+            val Q = Thm.dest_arg (Thm.cprop_of th')
+            val th0 =
+              \<^instantiate>\<open>'a = T and P and Q in
+                lemma "\<exists>x::'a. P x \<Longrightarrow> (\<And>x. P x \<Longrightarrow> Q) \<Longrightarrow> Q" by (fact exE)\<close>
+            val Px =
+              \<^instantiate>\<open>'a = T and P and x in cprop \<open>P x\<close> for x :: 'a\<close>
+            val th1 = Thm.forall_intr x (Thm.implies_intr Px th')
+          in Thm.implies_elim (Thm.implies_elim th0 th) th1  end
       | _ => raise THM ("choose",0,[th, th'])
 
-    fun simple_choose v th =
-      choose v
-        (Thm.assume
-          ((Thm.apply \<^cterm>\<open>Trueprop\<close> o mk_ex v) (Thm.dest_arg (hd (Thm.chyps_of th))))) th
+    fun simple_choose x th =
+      choose x (Thm.assume (mk_ex x (Thm.dest_arg (hd (Thm.chyps_of th))))) th
 
     val strip_forall =
       let
         fun h (acc, t) =
           case Thm.term_of t of
-            Const(\<^const_name>\<open>All\<close>,_)$Abs(_,_,_) =>
-              h (Thm.dest_abs NONE (Thm.dest_arg t) |>> (fn v => v::acc))
+            \<^Const_>\<open>All _ for \<open>Abs _\<close>\<close> =>
+              h (Thm.dest_abs_global (Thm.dest_arg t) |>> (fn v => v::acc))
           | _ => (acc,t)
       in fn t => h ([],t)
       end
-
-    fun f ct =
+  in
+    fn A =>
       let
         val nnf_norm_conv' =
           nnf_conv ctxt then_conv
-          literals_conv [\<^term>\<open>HOL.conj\<close>, \<^term>\<open>HOL.disj\<close>] []
+          literals_conv [\<^Const>\<open>conj\<close>, \<^Const>\<open>disj\<close>] []
           (Conv.cache_conv
             (first_conv [real_lt_conv, real_le_conv,
                          real_eq_conv, real_not_lt_conv,
                          real_not_le_conv, real_not_eq_conv, all_conv]))
-        fun absremover ct = (literals_conv [\<^term>\<open>HOL.conj\<close>, \<^term>\<open>HOL.disj\<close>] []
+        fun absremover ct = (literals_conv [\<^Const>\<open>conj\<close>, \<^Const>\<open>disj\<close>] []
                   (try_conv (absconv1 then_conv binop_conv (arg_conv poly_conv))) then_conv
                   try_conv (absconv2 then_conv nnf_norm_conv' then_conv binop_conv absremover)) ct
-        val nct = Thm.apply \<^cterm>\<open>Trueprop\<close> (Thm.apply \<^cterm>\<open>Not\<close> ct)
-        val th0 = (init_conv then_conv arg_conv nnf_norm_conv') nct
+        val not_A = \<^instantiate>\<open>A in cprop \<open>\<not> A\<close>\<close>
+        val th0 = (init_conv then_conv arg_conv nnf_norm_conv') not_A
         val tm0 = Thm.dest_arg (Thm.rhs_of th0)
         val (th, certificates) =
           if tm0 aconvc \<^cterm>\<open>False\<close> then (equal_implies_1_rule th0, Trivial) else
@@ -571,11 +573,12 @@ fun gen_gen_real_arith ctxt (mk_numeric,
             val th3 =
               fold simple_choose evs
                 (prove_hyp (Thm.equal_elim th1 (Thm.assume (Thm.apply \<^cterm>\<open>Trueprop\<close> bod))) th2)
-          in (Drule.implies_intr_hyps (prove_hyp (Thm.equal_elim th0 (Thm.assume nct)) th3), certs)
+          in (Drule.implies_intr_hyps (prove_hyp (Thm.equal_elim th0 (Thm.assume not_A)) th3), certs)
           end
-      in (Thm.implies_elim (Thm.instantiate' [] [SOME ct] pth_final) th, certificates)
+      in
+        (Thm.implies_elim \<^instantiate>\<open>A in lemma \<open>(\<not> A \<Longrightarrow> False) \<Longrightarrow> A\<close> by blast\<close> th,
+          certificates)
       end
-  in f
   end;
 
 (* A linear arithmetic prover *)
@@ -688,8 +691,8 @@ local
 
   fun is_alien ct =
     case Thm.term_of ct of
-      Const(\<^const_name>\<open>of_nat\<close>, _)$ n => not (can HOLogic.dest_number n)
-    | Const(\<^const_name>\<open>of_int\<close>, _)$ n => not (can HOLogic.dest_number n)
+      \<^Const_>\<open>of_nat _ for n\<close> => not (can HOLogic.dest_number n)
+    | \<^Const_>\<open>of_int _ for n\<close> => not (can HOLogic.dest_number n)
     | _ => false
 in
 fun real_linear_prover translator (eq,le,lt) =
@@ -719,40 +722,34 @@ local
 
   val absmaxmin_elim_conv2 =
     let
-      val pth_abs = Thm.instantiate' [SOME \<^ctyp>\<open>real\<close>] [] abs_split'
-      val pth_max = Thm.instantiate' [SOME \<^ctyp>\<open>real\<close>] [] max_split
-      val pth_min = Thm.instantiate' [SOME \<^ctyp>\<open>real\<close>] [] min_split
-      val abs_tm = \<^cterm>\<open>abs :: real \<Rightarrow> _\<close>
-      val p_v = (("P", 0), \<^typ>\<open>real \<Rightarrow> bool\<close>)
-      val x_v = (("x", 0), \<^typ>\<open>real\<close>)
-      val y_v = (("y", 0), \<^typ>\<open>real\<close>)
-      val is_max = is_binop \<^cterm>\<open>max :: real \<Rightarrow> _\<close>
-      val is_min = is_binop \<^cterm>\<open>min :: real \<Rightarrow> _\<close>
-      fun is_abs t = is_comb t andalso Thm.dest_fun t aconvc abs_tm
-      fun eliminate_construct p c tm =
+      fun elim_construct pred conv tm =
         let
-          val t = find_cterm p tm
-          val th0 = (Thm.symmetric o Thm.beta_conversion false) (Thm.apply (Thm.lambda t tm) t)
-          val (p,ax) = (Thm.dest_comb o Thm.rhs_of) th0
-        in fconv_rule(arg_conv(binop_conv (arg_conv (Thm.beta_conversion false))))
-                     (Thm.transitive th0 (c p ax))
-        end
+          val a = find_cterm (pred o Thm.term_of) tm
+          val P = Thm.lambda a tm
+        in conv P a end
 
-      val elim_abs = eliminate_construct is_abs
-        (fn p => fn ax =>
-          Thm.instantiate (TVars.empty, Vars.make [(p_v,p), (x_v, Thm.dest_arg ax)]) pth_abs)
-      val elim_max = eliminate_construct is_max
-        (fn p => fn ax =>
-          let val (ax,y) = Thm.dest_comb ax
-          in Thm.instantiate (TVars.empty, Vars.make [(p_v,p), (x_v, Thm.dest_arg ax), (y_v,y)])
-                             pth_max end)
-      val elim_min = eliminate_construct is_min
-        (fn p => fn ax =>
-          let val (ax,y) = Thm.dest_comb ax
-          in Thm.instantiate (TVars.empty, Vars.make [(p_v,p), (x_v, Thm.dest_arg ax), (y_v,y)])
-                             pth_min end)
-    in first_conv [elim_abs, elim_max, elim_min, all_conv]
-    end;
+      val elim_abs = elim_construct (fn \<^Const_>\<open>abs \<^Type>\<open>real\<close> for _\<close> => true | _ => false)
+        (fn P => fn a =>
+          let val x = Thm.dest_arg a in
+            \<^instantiate>\<open>P and x in
+              lemma \<open>P \<bar>x\<bar> \<equiv> (x \<ge> 0 \<and> P x \<or> x < 0 \<and> P (- x))\<close> for x :: real
+                by (atomize (full)) (auto split: abs_split)\<close>
+          end)
+      val elim_max = elim_construct (fn \<^Const_>\<open>max \<^Type>\<open>real\<close> for _ _\<close> => true | _ => false)
+        (fn P => fn a =>
+          let val (x, y) = Thm.dest_binop a in
+            \<^instantiate>\<open>P and x and y in
+              lemma \<open>P (max x y) \<equiv> (x \<le> y \<and> P y \<or> x > y \<and> P x)\<close> for x y :: real
+                by (atomize (full)) (auto simp add: max_def)\<close>
+          end)
+      val elim_min = elim_construct (fn \<^Const_>\<open>min \<^Type>\<open>real\<close> for _ _\<close> => true | _ => false)
+        (fn P => fn a =>
+          let val (x, y) = Thm.dest_binop a in
+            \<^instantiate>\<open>P and x and y in
+              lemma \<open>P (min x y) \<equiv> (x \<le> y \<and> P x \<or> x > y \<and> P y)\<close> for x y :: real
+                by (atomize (full)) (auto simp add: min_def)\<close>
+          end)
+    in first_conv [elim_abs, elim_max, elim_min, all_conv] end;
 in
 fun gen_real_arith ctxt (mkconst,eq,ge,gt,norm,neg,add,mul,prover) =
   gen_gen_real_arith ctxt

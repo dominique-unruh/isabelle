@@ -1,5 +1,6 @@
 (*  Title:      HOL/Statespace/state_fun.ML
-    Author:     Norbert Schirmer, TU Muenchen
+    Author:     Norbert Schirmer, TU Muenchen, 2007
+    Author:     Norbert Schirmer, Apple, 2021
 *)
 
 signature STATE_FUN =
@@ -16,6 +17,8 @@ sig
   val ex_lookup_ss : simpset
   val lazy_conj_simproc : simproc
   val string_eq_simp_tac : Proof.context -> int -> tactic
+
+  val trace_data : Context.generic -> unit
 end;
 
 structure StateFun: STATE_FUN =
@@ -101,10 +104,20 @@ structure Data = Generic_Data
 (
   type T = simpset * simpset * bool;  (*lookup simpset, ex_lookup simpset, are simprocs installed*)
   val empty = (empty_ss, empty_ss, false);
-  val extend = I;
   fun merge ((ss1, ex_ss1, b1), (ss2, ex_ss2, b2)) =
     (merge_ss (ss1, ss2), merge_ss (ex_ss1, ex_ss2), b1 orelse b2);
 );
+
+fun trace_data context =
+  let
+    val (lookup_ss, ex_ss, active) = Data.get context
+    val pretty_ex_ss = Simplifier.pretty_simpset true (put_simpset ex_ss (Context.proof_of context)) 
+    val pretty_lookup_ss = Simplifier.pretty_simpset true (put_simpset lookup_ss (Context.proof_of context)) 
+  in
+    tracing ("state_fun ex_ss: " ^ Pretty.string_of pretty_ex_ss ^ 
+     "\n ================= \n lookup_ss: " ^ Pretty.string_of pretty_lookup_ss ^ "\n " ^ 
+     "active: " ^ @{make_string} active)
+  end
 
 val _ = Theory.setup (Context.theory_map (Data.put (lookup_ss, ex_lookup_ss, false)));
 

@@ -8,6 +8,7 @@ signature ML_THMS =
 sig
   val the_attributes: Proof.context -> int -> Token.src list
   val the_thmss: Proof.context -> thm list list
+  val embedded_lemma: (Proof.context -> thm list * (term list * Proof.context)) parser
   val get_stored_thms: unit -> thm list
   val get_stored_thm: unit -> thm
   val store_thms: string * thm list -> unit
@@ -73,36 +74,37 @@ val _ = Theory.setup
    ML_Antiquotation.declaration \<^binding>\<open>thms\<close> Attrib.thms (K (thm_binding "thms" false)));
 
 
-(* ad-hoc goals *)
+(* embedded lemma *)
 
-val and_ = Args.$$$ "and";
-val by = Parse.reserved "by";
-val goal = Scan.unless (by || and_) Args.embedded_inner_syntax;
+val embedded_lemma =
+  Args.mode "open" -- Parse.and_list1 (Scan.repeat1 Parse.embedded_inner_syntax)
+    -- Parse.for_fixes -- Method.parse_by
+    >> (fn (((is_open, raw_stmt), fixes), (methods, reports)) => fn ctxt =>
+        let
+          val _ = Context_Position.reports ctxt reports;
+
+          val fixes_ctxt = #2 (Proof_Context.add_fixes_cmd fixes ctxt);
+          val stmt = burrow (map (rpair []) o Syntax.read_props fixes_ctxt) raw_stmt;
+          val stmt_ctxt = (fold o fold) (Proof_Context.augment o #1) stmt fixes_ctxt;
+
+          val prep_result = Goal.norm_result ctxt #> not is_open ? Thm.close_derivation \<^here>;
+          fun after_qed res goal_ctxt =
+            Proof_Context.put_thms false (Auto_Bind.thisN,
+              SOME (map prep_result (Proof_Context.export goal_ctxt ctxt (flat res)))) goal_ctxt;
+
+          val thms_ctxt = stmt_ctxt
+            |> Proof.theorem NONE after_qed stmt
+            |> Proof.global_terminal_proof methods;
+          val thms =
+            Proof_Context.get_fact thms_ctxt
+              (Facts.named (Proof_Context.full_name thms_ctxt (Binding.name Auto_Bind.thisN)))
+        in (thms, (map #1 (flat stmt), stmt_ctxt)) end);
 
 val _ = Theory.setup
-  (ML_Antiquotation.declaration \<^binding>\<open>lemma\<close>
-    (Scan.lift (Args.mode "open" -- Parse.enum1 "and" (Scan.repeat1 goal) --
-      (Parse.position by -- Method.parse -- Scan.option Method.parse)))
-    (fn _ => fn ((is_open, raw_propss), (((_, by_pos), m1), m2)) => fn ctxt =>
-      let
-        val reports =
-          (by_pos, Markup.keyword1 |> Markup.keyword_properties) ::
-            maps Method.reports_of (m1 :: the_list m2);
-        val _ = Context_Position.reports ctxt reports;
-
-        val propss = burrow (map (rpair []) o Syntax.read_props ctxt) raw_propss;
-        val prep_result = Goal.norm_result ctxt #> not is_open ? Thm.close_derivation \<^here>;
-        fun after_qed res goal_ctxt =
-          Proof_Context.put_thms false (Auto_Bind.thisN,
-            SOME (map prep_result (Proof_Context.export goal_ctxt ctxt (flat res)))) goal_ctxt;
-
-        val ctxt' = ctxt
-          |> Proof.theorem NONE after_qed propss
-          |> Proof.global_terminal_proof (m1, m2);
-        val thms =
-          Proof_Context.get_fact ctxt'
-            (Facts.named (Proof_Context.full_name ctxt' (Binding.name Auto_Bind.thisN)));
-      in thm_binding "lemma" (length (flat propss) = 1) thms ctxt end));
+  (ML_Antiquotation.declaration \<^binding>\<open>lemma\<close> (Scan.lift embedded_lemma)
+    (fn _ => fn make_lemma => fn ctxt =>
+      let val thms = #1 (make_lemma ctxt)
+      in thm_binding "lemma" (length thms = 1) thms ctxt end));
 
 
 (* old-style theorem bindings *)
@@ -111,7 +113,6 @@ structure Data = Theory_Data
 (
   type T = thm list;
   val empty = [];
-  val extend = I;
   val merge = #1;
 );
 

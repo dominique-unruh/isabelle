@@ -104,8 +104,6 @@ sig
   val make_src: string * Position.T -> T list -> src
   type 'a parser = T list -> 'a * T list
   type 'a context_parser = Context.generic * T list -> 'a * (Context.generic * T list)
-  val read_body: Keyword.keywords -> 'a parser -> Symbol_Pos.T list -> 'a option
-  val read_antiq: Keyword.keywords -> 'a parser -> Symbol_Pos.T list * Position.T -> 'a
   val syntax_generic: 'a context_parser -> src -> Context.generic -> 'a * Context.generic
   val syntax: 'a context_parser -> src -> Proof.context -> 'a * Proof.context
 end;
@@ -764,19 +762,6 @@ fun make_src a args = make_string a :: args;
 
 type 'a parser = T list -> 'a * T list;
 type 'a context_parser = Context.generic * T list -> 'a * (Context.generic * T list);
-
-
-(* read body -- e.g. antiquotation source *)
-
-fun read_body keywords scan =
-  tokenize (Keyword.no_command_keywords keywords) {strict = true}
-  #> filter is_proper
-  #> Scan.read stopper scan;
-
-fun read_antiq keywords scan (syms, pos) =
-  (case read_body keywords scan syms of
-    SOME x => x
-  | NONE => error ("Malformed antiquotation" ^ Position.here pos));
 
 
 (* wrapped syntax *)

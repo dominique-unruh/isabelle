@@ -71,10 +71,7 @@ fun old_skolem_defs th =
             |> mk_old_skolem_term_wrapper
           val comb = list_comb (rhs, args)
         in dec_sko (subst_bound (comb, p)) (rhs :: rhss) end
-      | dec_sko \<^Const_>\<open>All _ for \<open>Abs (a, T, p)\<close>\<close> rhss =
-        (*Universal quant: insert a free variable into body and continue*)
-        let val fname = singleton (Name.variant_list (Misc_Legacy.add_term_names (p, []))) a
-        in dec_sko (subst_bound (Free(fname,T), p)) rhss end
+      | dec_sko \<^Const_>\<open>All _ for \<open>t as Abs _\<close>\<close> rhss = dec_sko (#2 (Term.dest_abs_global t)) rhss
       | dec_sko \<^Const_>\<open>conj for p q\<close> rhss = rhss |> dec_sko p |> dec_sko q
       | dec_sko \<^Const_>\<open>disj for p q\<close> rhss = rhss |> dec_sko p |> dec_sko q
       | dec_sko \<^Const_>\<open>Trueprop for p\<close> rhss = dec_sko p rhss
@@ -93,7 +90,7 @@ fun is_quasi_lambda_free \<^Const_>\<open>Meson.skolem _ for _\<close> = true
 fun abstract ctxt ct =
   let
       val Abs (_, _, body) = Thm.term_of ct
-      val (x, cbody) = Thm.dest_abs NONE ct
+      val (x, cbody) = Thm.dest_abs_global ct
       val (A, cbodyT) = Thm.dest_funT (Thm.ctyp_of_cterm ct)
       fun makeK () = Thm.instantiate' [SOME A, SOME cbodyT] [SOME cbody] @{thm abs_K}
   in
@@ -138,14 +135,14 @@ fun abstract ctxt ct =
         | _ => raise Fail "abstract: Bad term"
   end;
 
-(* Traverse a theorem, remplacing lambda-abstractions with combinators. *)
+(* Traverse a theorem, replacing lambda-abstractions with combinators. *)
 fun introduce_combinators_in_cterm ctxt ct =
   if is_quasi_lambda_free (Thm.term_of ct) then
     Thm.reflexive ct
   else case Thm.term_of ct of
     Abs _ =>
     let
-      val (cv, cta) = Thm.dest_abs NONE ct
+      val (cv, cta) = Thm.dest_abs_global ct
       val (v, _) = dest_Free (Thm.term_of cv)
       val u_th = introduce_combinators_in_cterm ctxt cta
       val cu = Thm.rhs_of u_th
@@ -177,13 +174,13 @@ val cTrueprop = Thm.cterm_of \<^theory_context>\<open>HOL\<close> HOLogic.Truepr
 (*Given an abstraction over n variables, replace the bound variables by free
   ones. Return the body, along with the list of free variables.*)
 fun c_variant_abs_multi (ct0, vars) =
-      let val (cv,ct) = Thm.dest_abs NONE ct0
+      let val (cv,ct) = Thm.dest_abs_global ct0
       in  c_variant_abs_multi (ct, cv::vars)  end
       handle CTERM _ => (ct0, rev vars);
 
 (* Given the definition of a Skolem function, return a theorem to replace
    an existential formula by a use of that function.
-   Example: "EX x. x : A & x ~: B ==> sko A B : A & sko A B ~: B"  [.] *)
+   Example: "\<exists>x. x \<in> A \<and> x \<notin> B \<Longrightarrow> sko A B \<in> A \<and> sko A B \<notin> B" *)
 fun old_skolem_theorem_of_def ctxt rhs0 =
   let
     val rhs = rhs0 |> Type.legacy_freeze_thaw |> #1 |> Thm.cterm_of ctxt
@@ -266,10 +263,10 @@ fun rename_bound_vars_to_be_zapped ax_no =
 fun zap pos ct =
   ct
   |> (case Thm.term_of ct of
-        Const (s, _) $ Abs (s', _, _) =>
+        Const (s, _) $ Abs _ =>
         if s = \<^const_name>\<open>Pure.all\<close> orelse s = \<^const_name>\<open>All\<close> orelse
            s = \<^const_name>\<open>Ex\<close> then
-          Thm.dest_comb #> snd #> Thm.dest_abs (SOME s') #> snd #> zap pos
+          Thm.dest_comb #> snd #> Thm.dest_abs_global #> snd #> zap pos
         else
           Conv.all_conv
       | Const (s, _) $ _ $ _ =>
@@ -369,9 +366,9 @@ fun cnf_axiom simp_options ctxt0 new_skolem combinators ax_no th =
        th ctxt1
     val (cnf_ths, ctxt2) = clausify nnf_th
     fun intr_imp ct th =
-      Thm.instantiate
-        (TVars.empty, Vars.make [(\<^var>\<open>?i::nat\<close>, Thm.cterm_of ctxt2 (HOLogic.mk_nat ax_no))])
-        (zero_var_indexes @{thm skolem_COMBK_D})
+      \<^instantiate>\<open>i = \<open>Thm.cterm_of ctxt2 (HOLogic.mk_nat ax_no)\<close> in
+        lemma (schematic) \<open>skolem (COMBK P i) \<Longrightarrow> P\<close> for i :: nat
+          by (rule iffD2 [OF skolem_COMBK_iff])\<close>
       RS Thm.implies_intr ct th
   in
     (opt |> Option.map (I #>> singleton (Variable.export ctxt2 ctxt0)

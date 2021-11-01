@@ -159,7 +159,6 @@ structure Data = Theory_Data
 (
   type T = raw_param list
   val empty = default_default_params |> map (apsnd single)
-  val extend = I
   fun merge data : T = AList.merge (op =) (K true) data
 )
 
@@ -385,16 +384,17 @@ val _ =
             [] => "none"
           | params => params |> map string_of_raw_param |> sort_strings |> cat_lines))))))
 
-fun try_sledgehammer auto state =
-  let
-    val thy = Proof.theory_of state
-    val mode = if auto then Auto_Try else Try
-    val i = 1
-  in
-    run_sledgehammer (get_params mode thy []) mode NONE i no_fact_override (silence_state state)
-  end
-
-val _ = Try.tool_setup (sledgehammerN, (40, \<^system_option>\<open>auto_sledgehammer\<close>, try_sledgehammer))
+val _ =
+  Try.tool_setup
+   {name = sledgehammerN, weight = 40, auto_option = \<^system_option>\<open>auto_sledgehammer\<close>,
+    body = fn auto => fn state =>
+      let
+        val thy = Proof.theory_of state
+        val mode = if auto then Auto_Try else Try
+        val i = 1
+      in
+        run_sledgehammer (get_params mode thy []) mode NONE i no_fact_override (silence_state state)
+      end}
 
 val _ =
   Query_Operation.register {name = sledgehammerN, pri = 0}

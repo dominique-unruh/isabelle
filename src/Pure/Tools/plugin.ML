@@ -29,7 +29,6 @@ structure Data = Theory_Data
 (
   type T = string list Name_Space.table;
   val empty: T = Name_Space.empty_table "plugin";
-  val extend = I;
   val merge = Name_Space.merge_tables;
 );
 
@@ -41,7 +40,7 @@ fun check ctxt =
 
 val _ = Theory.setup
   (ML_Antiquotation.inline_embedded \<^binding>\<open>plugin\<close>
-    (Args.context -- Scan.lift Args.embedded_position >> (ML_Syntax.print_string o uncurry check)));
+    (Args.context -- Scan.lift Parse.embedded_position >> (ML_Syntax.print_string o uncurry check)));
 
 
 (* indirections *)
@@ -124,7 +123,6 @@ structure Plugin_Data = Theory_Data
 (
   type T = data list * (interp * data list) list;
   val empty : T = ([], []);
-  val extend = I;
   val merge_data = merge eq_data;
   fun merge ((data1, interps1), (data2, interps2)) : T =
     (merge_data (data1, data2), AList.join eq_interp (K merge_data) (interps1, interps2));

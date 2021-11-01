@@ -26,7 +26,6 @@ structure Markers = Theory_Data
 (
   type T = (Token.src -> Proof.context -> Proof.context) Name_Space.table;
   val empty : T = Name_Space.empty_table "document_marker";
-  val extend = I;
   val merge = Name_Space.merge_tables;
 );
 
@@ -59,11 +58,11 @@ fun evaluate cmd_name input ctxt =
 
     val _ = Context_Position.reports ctxt (map (pair pos) (Comment.kind_markups Comment.Marker));
 
+    val keywords = Keyword.no_major_keywords (Thy_Header.get_keywords' ctxt);
     val body = Symbol_Pos.cartouche_content syms;
     val markers =
-      (case Token.read_body (Thy_Header.get_keywords' ctxt) (Parse.list parse_marker) body of
-        SOME res => res
-      | NONE => error ("Bad input" ^ Position.here pos));
+      Input.source true (Symbol_Pos.implode body) (Symbol_Pos.range body)
+      |> Parse.read_embedded ctxt keywords (Parse.list parse_marker);
   in
     ctxt
     |> Config.put config_command_name cmd_name

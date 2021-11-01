@@ -7,6 +7,7 @@ of parse/unparse operations.
 
 signature SYNTAX_PHASES =
 sig
+  val markup_free: Proof.context -> string -> Markup.T list
   val reports_of_scope: Position.T list -> Position.report list
   val decode_sort: term -> sort
   val decode_typ: term -> typ
@@ -875,7 +876,6 @@ structure Checks = Generic_Data
     ((key * ((string * typ check) * stamp) list) list *
      (key * ((string * term check) * stamp) list) list);
   val empty = ([], []);
-  val extend = I;
   fun merge ((typ_checks1, term_checks1), (typ_checks2, term_checks2)) : T =
     (AList.join (op =) (K (Library.merge (eq_snd (op =)))) (typ_checks1, typ_checks2),
      AList.join (op =) (K (Library.merge (eq_snd (op =)))) (term_checks1, term_checks2));

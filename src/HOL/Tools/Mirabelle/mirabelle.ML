@@ -35,13 +35,15 @@ struct
 
 (* concrete syntax *)
 
-val keywords = Keyword.no_command_keywords (Thy_Header.get_keywords \<^theory>);
-
 fun read_actions str =
   let
-    val actions = Token.read_body keywords
+    val thy = \<^theory>;
+    val ctxt = Proof_Context.init_global thy
+    val keywords = Keyword.no_major_keywords (Thy_Header.get_keywords thy)
+
+    fun read_actions () = Parse.read_embedded ctxt keywords
       (Parse.enum ";" (Parse.name -- Sledgehammer_Commands.parse_params))
-      (Symbol_Pos.explode0 str)
+      (Input.string str)
     fun split_name_label (name, args) labels =
         (case String.tokens (fn c => c = #".") name of
           [name] => (("", name, args), labels)
@@ -53,7 +55,8 @@ fun read_actions str =
            ((label, name, args), Symtab.insert_set label labels))
         | _ => error "Cannot parse action")
   in
-    Option.map (fn xs => fst (fold_map split_name_label xs Symtab.empty)) actions
+    try read_actions ()
+    |> Option.map (fn xs => fst (fold_map split_name_label xs Symtab.empty))
   end
 
 
@@ -94,8 +97,10 @@ fun run_action_function f =
     if Exn.is_interrupt exn then Exn.reraise exn
     else print_exn exn;
 
-fun make_action_path ({index, label, name, ...} : action_context) =
-  Path.basic (if label = "" then string_of_int index ^ "." ^ name else label);
+fun make_action_string ({index, label, name, ...} : action_context) =
+  if label = "" then string_of_int index ^ "." ^ name else label;
+
+val make_action_path = Path.basic o make_action_string;
 
 fun finalize_action ({finalize, ...} : action) context =
   let
@@ -103,6 +108,8 @@ fun finalize_action ({finalize, ...} : action) context =
     val action_path = make_action_path context;
     val export_name =
       Path.binding0 (Path.basic "mirabelle" + action_path + Path.basic "finalize");
+    val () = File.append ((Path.dir (#output_dir context)) + Path.basic "mirabelle_ML.log")
+      (prefix_lines (make_action_string context ^ " finalize ") (YXML.content_of s) ^ "\n")
   in
     if s <> "" then
       Export.export \<^theory> export_name [XML.Text s]
@@ -121,6 +128,13 @@ fun apply_action ({run_action, ...} : action) context (command as {pos, pre, ...
       Path.binding0 (Path.basic "mirabelle" + action_path + Path.basic "goal" + goal_name_path +
         line_path + offset_path);
     val s = run_action_function (fn () => run_action command);
+    val prefix = make_action_string context ^ " goal." ^ StringCvt.padRight #" " 6 (#name command) ^
+        Context.theory_long_name thy ^ " " ^
+        string_of_int (the (Position.line_of pos)) ^ ":" ^
+        string_of_int (the (Position.offset_of pos)) ^ " "
+    val _ = Substring.triml
+    val () = File.append ((Path.dir (#output_dir context)) + Path.basic "mirabelle_ML.log")
+      (prefix_lines prefix (YXML.content_of s) ^ "\n")
   in
     if s <> "" then
       Export.export thy export_name [XML.Text s]
@@ -189,7 +203,9 @@ val _ =
           val mirabelle_stride = Options.default_int \<^system_option>\<open>mirabelle_stride\<close>;
           val mirabelle_max_calls = Options.default_int \<^system_option>\<open>mirabelle_max_calls\<close>;
           val mirabelle_theories = Options.default_string \<^system_option>\<open>mirabelle_theories\<close>;
-          val mirabelle_output_dir = Options.default_string \<^system_option>\<open>mirabelle_output_dir\<close>;
+          val mirabelle_output_dir = Options.default_string \<^system_option>\<open>mirabelle_output_dir\<close>
+            |> Path.explode
+            |> Isabelle_System.make_directory;
           val check_theory = check_theories (space_explode "," mirabelle_theories);
 
           fun make_commands (thy_index, (thy, segments)) =
@@ -218,10 +234,12 @@ val _ =
           (* initialize actions *)
           val contexts = actions |> map_index (fn (n, (label, name, args)) =>
             let
-              val make_action = the (get_action name);
-              val action_subdir = if label = "" then string_of_int n ^ "." ^ name else label
-              val output_dir =
-                Path.append (Path.explode mirabelle_output_dir) (Path.basic action_subdir)
+              val make_action =
+                (case get_action name of
+                  SOME f => f
+                | NONE => error "Unknown action");
+              val action_subdir = if label = "" then string_of_int n ^ "." ^ name else label;
+              val output_dir = Path.append mirabelle_output_dir (Path.basic action_subdir);
               val context =
                 {index = n, label = label, name = name, arguments = args,
                  timeout = mirabelle_timeout, output_dir = output_dir};

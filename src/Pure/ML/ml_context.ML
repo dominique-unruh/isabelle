@@ -10,11 +10,14 @@ sig
   val struct_name: Proof.context -> string
   val variant: string -> Proof.context -> string * Proof.context
   type decl = Proof.context -> ML_Lex.token list * ML_Lex.token list
+  type decls = Proof.context -> (ML_Lex.token list * ML_Lex.token list) list
   type antiquotation = Position.range -> Token.src -> Proof.context -> decl * Proof.context
   val add_antiquotation: binding -> bool -> antiquotation -> theory -> theory
   val print_antiquotations: bool -> Proof.context -> unit
   val expand_antiquotes: ML_Lex.token Antiquote.antiquote list ->
     Proof.context -> decl * Proof.context
+  val expand_antiquotes_list: ML_Lex.token Antiquote.antiquote list list ->
+    Proof.context -> decls * Proof.context
   val eval: ML_Compiler.flags -> Position.T -> ML_Lex.token Antiquote.antiquote list -> unit
   val eval_file: ML_Compiler.flags -> Path.T -> unit
   val eval_source: ML_Compiler.flags -> Input.source -> unit
@@ -56,6 +59,8 @@ fun variant a ctxt =
 type decl =
   Proof.context -> ML_Lex.token list * ML_Lex.token list;  (*final context -> ML env, ML body*)
 
+type decls = Proof.context -> (ML_Lex.token list * ML_Lex.token list) list;
+
 type antiquotation =
   Position.range -> Token.src -> Proof.context -> decl * Proof.context;
 
@@ -63,7 +68,6 @@ structure Antiquotations = Theory_Data
 (
   type T = (bool * antiquotation) Name_Space.table;
   val empty : T = Name_Space.empty_table Markup.ML_antiquotationN;
-  val extend = I;
   fun merge data : T = Name_Space.merge_tables data;
 );
 
@@ -107,7 +111,7 @@ fun expand_antiquote ant ctxt =
         (Token.make_src name (if null body then [] else [Token.read_cartouche body]))
   | Antiquote.Antiq {range, body, ...} =>
       ctxt |> apply_antiquotation range
-        (Token.read_antiq (Thy_Header.get_keywords' ctxt) antiq (body, #1 range)));
+        (Parse.read_antiq (Thy_Header.get_keywords' ctxt) antiq (body, #1 range)));
 
 in
 
@@ -116,6 +120,12 @@ fun expand_antiquotes ants ctxt =
     val (decls, ctxt') = fold_map expand_antiquote ants ctxt;
     fun decl ctxt'' = decls |> map (fn d => d ctxt'') |> split_list |> apply2 flat;
   in (decl, ctxt') end;
+
+fun expand_antiquotes_list antss ctxt =
+  let
+    val (decls, ctxt') = fold_map expand_antiquotes antss ctxt;
+    fun decl' ctxt'' = map (fn decl => decl ctxt'') decls;
+  in (decl', ctxt') end
 
 end;
 

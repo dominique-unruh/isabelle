@@ -347,7 +347,6 @@ structure Simpset = Generic_Data
 (
   type T = simpset;
   val empty = empty_ss;
-  val extend = I;
   val merge = merge_ss;
 );
 
@@ -859,7 +858,6 @@ structure Trace_Ops = Theory_Data
   val empty: T =
    {trace_invoke = fn _ => fn ctxt => ctxt,
     trace_apply = fn _ => fn ctxt => fn cont => cont ctxt};
-  val extend = I;
   fun merge (trace_ops, _) = trace_ops;
 );
 
@@ -981,7 +979,7 @@ fun rewritec (prover, maxt) ctxt t =
           else Thm.match (elhs', eta_t');
         val thm' = Thm.instantiate insts (Thm.rename_boundvars lhs eta_t rthm);
         val prop' = Thm.prop_of thm';
-        val unconditional = (Logic.count_prems prop' = 0);
+        val unconditional = Logic.no_prems prop';
         val (lhs', rhs') = Logic.dest_equals (Logic.strip_imp_concl prop');
         val trace_args = {unconditional = unconditional, term = eta_t, thm = thm', rrule = rrule};
       in
@@ -1130,21 +1128,13 @@ fun bottomc ((simprem, useprem, mutsimp), prover, maxidx) =
     and subc skel ctxt t0 =
         let val Simpset (_, {congs, ...}) = simpset_of ctxt in
           (case Thm.term_of t0 of
-              Abs (a, T, _) =>
+              Abs (a, _, _) =>
                 let
-                    val (v, ctxt') = Variable.next_bound (a, T) ctxt;
-                    val b = #1 (Term.dest_Free v);
-                    val (v', t') = Thm.dest_abs (SOME b) t0;
-                    val b' = #1 (Term.dest_Free (Thm.term_of v'));
-                    val _ =
-                      if b <> b' then
-                        warning ("Bad Simplifier context: renamed bound variable " ^
-                          quote b ^ " to " ^ quote b' ^ Position.here (Position.thread_data ()))
-                      else ();
-                    val skel' = (case skel of Abs (_, _, sk) => sk | _ => skel0);
+                  val ((v, t'), ctxt') = Variable.dest_abs_cterm t0 ctxt;
+                  val skel' = (case skel of Abs (_, _, sk) => sk | _ => skel0);
                 in
                   (case botc skel' ctxt' t' of
-                    SOME thm => SOME (Thm.abstract_rule a v' thm)
+                    SOME thm => SOME (Thm.abstract_rule a v thm)
                   | NONE => NONE)
                 end
             | t $ _ =>

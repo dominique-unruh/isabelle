@@ -26,7 +26,6 @@ structure Data = Generic_Data
 (
   type T = thm Item_Net.T Symtab.table;
   val empty: T = Symtab.empty;
-  val extend = I;
   val merge : T * T -> T = Symtab.join (K Item_Net.merge);
 );
 
@@ -104,7 +103,7 @@ fun declare binding descr lthy =
 
 val _ = Theory.setup
   (ML_Antiquotation.inline_embedded \<^binding>\<open>named_theorems\<close>
-    (Args.context -- Scan.lift Args.embedded_position >>
+    (Args.context -- Scan.lift Parse.embedded_position >>
       (fn (ctxt, name) => ML_Syntax.print_string (check ctxt name))));
 
 end;

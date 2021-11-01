@@ -47,10 +47,12 @@ sig
   type keywords
   val minor_keywords: keywords -> Scan.lexicon
   val major_keywords: keywords -> Scan.lexicon
-  val no_command_keywords: keywords -> keywords
   val empty_keywords: keywords
   val merge_keywords: keywords * keywords -> keywords
   val add_keywords: ((string * Position.T) * spec) list -> keywords -> keywords
+  val add_minor_keywords: string list -> keywords -> keywords
+  val add_major_keywords: string list -> keywords -> keywords
+  val no_major_keywords: keywords -> keywords
   val is_keyword: keywords -> string -> bool
   val is_command: keywords -> string -> bool
   val is_literal: keywords -> string -> bool
@@ -169,9 +171,6 @@ fun make_keywords (minor, major, commands) =
 fun map_keywords f (Keywords {minor, major, commands}) =
   make_keywords (f (minor, major, commands));
 
-val no_command_keywords =
-  map_keywords (fn (minor, _, _) => (minor, Scan.empty_lexicon, Symtab.empty));
-
 
 (* build keywords *)
 
@@ -198,6 +197,15 @@ val add_keywords =
         val major' = Scan.extend_lexicon (Symbol.explode name) major;
         val commands' = Symtab.update (name, entry) commands;
       in (minor, major', commands') end));
+
+val add_minor_keywords =
+  add_keywords o map (fn name => ((name, Position.none), no_spec));
+
+val add_major_keywords =
+  add_keywords o map (fn name => ((name, Position.none), (diag, [])));
+
+val no_major_keywords =
+  map_keywords (fn (minor, _, _) => (minor, Scan.empty_lexicon, Symtab.empty));
 
 
 (* keyword status *)

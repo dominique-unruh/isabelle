@@ -135,7 +135,6 @@ structure Custom_Funs = Generic_Data
   fun merge ({name_table = tbl1, net = net1}, {name_table = tbl2, net = net2}) = 
     {name_table = Name_Space.join_tables (fn _ => raise DUP) (tbl1, tbl2),
      net = Item_Net.merge (net1, net2)}
-  val extend = I
 )
 
 fun rewrite' ctxt old_prems bounds thms ct =
@@ -164,8 +163,7 @@ fun rewrite' ctxt old_prems bounds thms ct =
         handle Pattern.MATCH => NONE
     fun rewrite_subterm prems ct (Abs (x, _, _)) =
       let
-        val (u, ctxt') = yield_singleton Variable.variant_fixes x ctxt;
-        val (v, ct') = Thm.dest_abs (SOME u) ct;
+        val ((v, ct'), ctxt') = Variable.dest_abs_cterm ct ctxt;
         val (thm, prems) = rewrite' ctxt' prems (x :: bounds) thms ct'
       in
         if Thm.is_reflexive thm then

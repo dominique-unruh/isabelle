@@ -1,11 +1,17 @@
-signature METRIC_ARITH = sig
-  val metric_arith_tac : Proof.context -> int -> tactic
+(*  Title:      HOL/Analysis/metric_arith.ML
+    Author:     Maximilian Schäffeler (port from HOL Light)
+
+A decision procedure for metric spaces.
+*)
+
+signature METRIC_ARITH =
+sig
   val trace: bool Config.T
+  val metric_arith_tac : Proof.context -> int -> tactic
 end
 
-structure MetricArith : METRIC_ARITH = struct
-
-fun default d x = case x of SOME y => SOME y | NONE => d
+structure Metric_Arith : METRIC_ARITH =
+struct
 
 (* apply f to both cterms in ct_pair, merge results *)
 fun app_union_ct_pair f ct_pair = uncurry (union (op aconvc)) (apply2 f ct_pair)
@@ -13,18 +19,15 @@ fun app_union_ct_pair f ct_pair = uncurry (union (op aconvc)) (apply2 f ct_pair)
 val trace = Attrib.setup_config_bool \<^binding>\<open>metric_trace\<close> (K false)
 
 fun trace_tac ctxt msg =
-  if Config.get ctxt trace then print_tac ctxt msg
-  else all_tac
+  if Config.get ctxt trace then print_tac ctxt msg else all_tac
 
 fun argo_trace_ctxt ctxt =
   if Config.get ctxt trace
   then Config.map (Argo_Tactic.trace) (K "basic") ctxt
   else ctxt
 
-fun IF_UNSOLVED' tac i = IF_UNSOLVED (tac i)
-fun REPEAT' tac i = REPEAT (tac i)
-
-fun free_in v ct = Cterms.defined (Cterms.build (Drule.add_frees_cterm ct)) v
+fun free_in v t =
+  Term.exists_subterm (fn u => u aconv Thm.term_of v) (Thm.term_of t);
 
 (* build a cterm set with elements cts of type ty *)
 fun mk_ct_set ctxt ty =
@@ -68,89 +71,68 @@ fun dist_refl_sym_tac ctxt =
     K (trace_tac ctxt ("Simplified using " ^ @{make_string} refl_sym_simps))
   end
 
-fun is_exists ct =
-  case Thm.term_of ct of
-    Const (\<^const_name>\<open>HOL.Ex\<close>,_)$_ => true
-  | Const (\<^const_name>\<open>Trueprop\<close>,_)$_ => is_exists (Thm.dest_arg ct)
-  | _ => false
+fun is_exists \<^Const_>\<open>Ex _ for _\<close> = true
+  | is_exists \<^Const_>\<open>Trueprop for t\<close> = is_exists t
+  | is_exists _ = false
 
-fun is_forall ct =
-  case Thm.term_of ct of
-    Const (\<^const_name>\<open>HOL.All\<close>,_)$_ => true
-  | Const (\<^const_name>\<open>Trueprop\<close>,_)$_ => is_forall (Thm.dest_arg ct)
-  | _ => false
+fun is_forall \<^Const_>\<open>All _ for _\<close> = true
+  | is_forall \<^Const_>\<open>Trueprop for t\<close> = is_forall t
+  | is_forall _ = false
 
-fun dist_ty mty = mty --> mty --> \<^typ>\<open>real\<close>
 
 (* find all free points in ct of type metric_ty *)
 fun find_points ctxt metric_ty ct =
   let
     fun find ct =
-      (if Thm.typ_of_cterm ct = metric_ty then [ct] else []) @ (
-        case Thm.term_of ct of
-          _ $ _ =>
-          app_union_ct_pair find (Thm.dest_comb ct)
-        | Abs (_, _, _) =>
-          (* ensure the point doesn't contain the bound variable *)
-          let val (var, bod) = Thm.dest_abs NONE ct in
-            filter (free_in var #> not) (find bod)
-          end
-        | _ => [])
-    val points = find ct
+      (if Thm.typ_of_cterm ct = metric_ty then [ct] else []) @
+      (case Thm.term_of ct of
+        _ $ _ => app_union_ct_pair find (Thm.dest_comb ct)
+      | Abs _ =>
+          (*ensure the point doesn't contain the bound variable*)
+          let val (x, body) = Thm.dest_abs_global ct
+          in filter_out (free_in x) (find body) end
+      | _ => [])
   in
-    case points of
+    (case find ct of
       [] =>
-      (* if no point can be found, invent one *)
-      let
-        val free_name = Term.variant_frees (Thm.term_of ct) [("x", metric_ty)]
-      in
-        map (Free #> Thm.cterm_of ctxt) free_name
-      end
-    | _ => points
+        (*if no point can be found, invent one*)
+        let val x = singleton (Term.variant_frees (Thm.term_of ct)) ("x", metric_ty)
+        in [Thm.cterm_of ctxt (Free x)] end
+    | points => points)
   end
 
 (* find all cterms "dist x y" in ct, where x and y have type metric_ty *)
-fun find_dist metric_ty ct =
+fun find_dist metric_ty =
   let
-    val dty = dist_ty metric_ty
     fun find ct =
-      case Thm.term_of ct of
-        Const (\<^const_name>\<open>dist\<close>, ty) $ _ $ _ =>
-        if ty = dty then [ct] else []
-      | _ $ _ =>
-        app_union_ct_pair find (Thm.dest_comb ct)
-      | Abs (_, _, _) =>
-        let val (var, bod) = Thm.dest_abs NONE ct in
-          filter (free_in var #> not) (find bod)
-        end
-      | _ => []
-  in
-    find ct
-  end
+      (case Thm.term_of ct of
+        \<^Const_>\<open>dist T for _ _\<close> => if T = metric_ty then [ct] else []
+      | _ $ _ => app_union_ct_pair find (Thm.dest_comb ct)
+      | Abs _ =>
+          let val (x, body) = Thm.dest_abs_global ct
+          in filter_out (free_in x) (find body) end
+      | _ => [])
+  in find end
 
 (* find all "x=y", where x has type metric_ty *)
-fun find_eq metric_ty ct =
+fun find_eq metric_ty =
   let
     fun find ct =
-      case Thm.term_of ct of
-        Const (\<^const_name>\<open>HOL.eq\<close>, ty) $ _ $ _ =>
-          if fst (dest_funT ty) = metric_ty
-          then [ct]
+      (case Thm.term_of ct of
+        \<^Const_>\<open>HOL.eq T for _ _\<close> =>
+          if T = metric_ty then [ct]
           else app_union_ct_pair find (Thm.dest_binop ct)
       | _ $ _ => app_union_ct_pair find (Thm.dest_comb ct)
-      | Abs (_, _, _) =>
-        let val (var, bod) = Thm.dest_abs NONE ct in
-          filter (free_in var #> not) (find bod)
-        end
-      | _ => []
-  in
-    find ct
-  end
+      | Abs _ =>
+          let val (x, body) = Thm.dest_abs_global ct
+          in filter_out (free_in x) (find body) end
+      | _ => [])
+  in find end
 
 (* rewrite ct of the form "dist x y" using maxdist_thm *)
 fun maxdist_conv ctxt fset_ct ct =
   let
-    val (xct, yct) = Thm.dest_binop ct
+    val (x, y) = Thm.dest_binop ct
     val solve_prems =
       rule_by_tactic ctxt (ALLGOALS (simp_tac (put_simpset HOL_ss ctxt
         addsimps @{thms finite.emptyI finite_insert empty_iff insert_iff})))
@@ -168,9 +150,11 @@ fun maxdist_conv ctxt fset_ct ct =
     val real_abs_dist_simp =
       Simplifier.rewrite (put_simpset HOL_ss ctxt addsimps @{thms real_abs_dist})
     val maxdist_thm =
-      @{thm maxdist_thm} |>
-      infer_instantiate' ctxt [SOME fset_ct, SOME xct, SOME yct] |>
-      solve_prems
+      \<^instantiate>\<open>'a = \<open>Thm.ctyp_of_cterm x\<close> and x and y and s = fset_ct in
+        lemma \<open>finite s \<Longrightarrow> x \<in> s \<Longrightarrow> y \<in> s \<Longrightarrow> dist x y \<equiv> SUP a\<in>s. \<bar>dist x a - dist a y\<bar>\<close>
+          for x y :: \<open>'a::metric_space\<close>
+          by (fact maxdist_thm)\<close>
+      |> solve_prems
   in
     ((Conv.rewr_conv maxdist_thm) then_conv
     (* SUP to Sup *)
@@ -187,7 +171,7 @@ fun maxdist_conv ctxt fset_ct ct =
 (* rewrite ct of the form "x=y" using metric_eq_thm *)
 fun metric_eq_conv ctxt fset_ct ct =
   let
-    val (xct, yct) = Thm.dest_binop ct
+    val (x, y) = Thm.dest_binop ct
     val solve_prems =
       rule_by_tactic ctxt (ALLGOALS (simp_tac (put_simpset HOL_ss ctxt
         addsimps @{thms empty_iff insert_iff})))
@@ -197,127 +181,127 @@ fun metric_eq_conv ctxt fset_ct ct =
     val dist_refl_sym_simp =
       Simplifier.rewrite (put_simpset HOL_ss ctxt addsimps @{thms dist_commute dist_self})
     val metric_eq_thm =
-      @{thm metric_eq_thm} |>
-      infer_instantiate' ctxt [SOME xct, SOME fset_ct, SOME yct] |>
-      solve_prems
+      \<^instantiate>\<open>'a = \<open>Thm.ctyp_of_cterm x\<close> and x and y and s = fset_ct in
+        lemma \<open>x \<in> s \<Longrightarrow> y \<in> s \<Longrightarrow> x = y \<equiv> \<forall>a\<in>s. dist x a = dist y a\<close>
+          for x y :: \<open>'a::metric_space\<close>
+          by (fact metric_eq_thm)\<close>
+      |> solve_prems
   in
     ((Conv.rewr_conv metric_eq_thm) then_conv
-    (* convert \<forall>x\<in>{x\<^sub>1,...,x\<^sub>n}. P x to P x\<^sub>1 \<and> ... \<and> P x\<^sub>n *)
+    (*convert \<forall>x\<in>{x\<^sub>1,...,x\<^sub>n}. P x to P x\<^sub>1 \<and> ... \<and> P x\<^sub>n*)
     ball_simp then_conv
     dist_refl_sym_simp) ct
   end
 
 (* build list of theorems "0 \<le> dist x y" for all dist terms in ct *)
-fun augment_dist_pos ctxt metric_ty ct =
+fun augment_dist_pos metric_ty ct =
   let fun inst dist_ct =
-    let val (xct, yct) = Thm.dest_binop dist_ct
-    in infer_instantiate' ctxt [SOME xct, SOME yct] @{thm zero_le_dist} end
+    let val (x, y) = Thm.dest_binop dist_ct in
+      \<^instantiate>\<open>'a = \<open>Thm.ctyp_of_cterm x\<close> and x and y
+        in lemma \<open>dist x y \<ge> 0\<close> for x y :: \<open>'a::metric_space\<close> by simp\<close>
+    end
   in map inst (find_dist metric_ty ct) end
 
-fun top_sweep_rewrs_tac ctxt thms =
-  CONVERSION (Conv.top_sweep_conv (K (Conv.rewrs_conv thms)) ctxt)
-
 (* apply maxdist_conv and metric_eq_conv to the goal, thereby embedding the goal in (\<real>\<^sup>n,dist\<^sub>\<infinity>) *)
-fun embedding_tac ctxt metric_ty i goal =
+fun embedding_tac ctxt metric_ty = CSUBGOAL (fn (goal, i) =>
   let
-    val ct = (Thm.cprem_of goal 1)
-    val points = find_points ctxt metric_ty ct
+    val points = find_points ctxt metric_ty goal
     val fset_ct = mk_ct_set ctxt metric_ty points
-    (* embed all subterms of the form "dist x y" in (\<real>\<^sup>n,dist\<^sub>\<infinity>) *)
-    val eq1 = map (maxdist_conv ctxt fset_ct) (find_dist metric_ty ct)
-    (* replace point equality by equality of components in \<real>\<^sup>n *)
-    val eq2 = map (metric_eq_conv ctxt fset_ct) (find_eq metric_ty ct)
+    (*embed all subterms of the form "dist x y" in (\<real>\<^sup>n,dist\<^sub>\<infinity>)*)
+    val eq1 = map (maxdist_conv ctxt fset_ct) (find_dist metric_ty goal)
+    (*replace point equality by equality of components in \<real>\<^sup>n*)
+    val eq2 = map (metric_eq_conv ctxt fset_ct) (find_eq metric_ty goal)
   in
-    ( K (trace_tac ctxt "Embedding into \<real>\<^sup>n") THEN' top_sweep_rewrs_tac ctxt (eq1 @ eq2))i goal
-  end
+    (K (trace_tac ctxt "Embedding into \<real>\<^sup>n") THEN'
+      CONVERSION (Conv.top_sweep_rewrs_conv (eq1 @ eq2) ctxt)) i
+  end)
 
 (* decision procedure for linear real arithmetic *)
-fun lin_real_arith_tac ctxt metric_ty i goal =
+fun lin_real_arith_tac ctxt metric_ty = CSUBGOAL (fn (goal, i) =>
   let
-    val dist_thms = augment_dist_pos ctxt metric_ty (Thm.cprem_of goal 1)
+    val dist_thms = augment_dist_pos metric_ty goal
     val ctxt' = argo_trace_ctxt ctxt
-  in (Argo_Tactic.argo_tac ctxt' dist_thms) i goal end
+  in Argo_Tactic.argo_tac ctxt' dist_thms i end)
 
 fun basic_metric_arith_tac ctxt metric_ty =
-  HEADGOAL (dist_refl_sym_tac ctxt THEN'
-  IF_UNSOLVED' (embedding_tac ctxt metric_ty) THEN'
-  IF_UNSOLVED' (pre_arith_tac ctxt) THEN'
-  IF_UNSOLVED' (lin_real_arith_tac ctxt metric_ty))
+  SELECT_GOAL (
+    dist_refl_sym_tac ctxt 1 THEN
+    IF_UNSOLVED (embedding_tac ctxt metric_ty 1) THEN
+    IF_UNSOLVED (pre_arith_tac ctxt 1) THEN
+    IF_UNSOLVED (lin_real_arith_tac ctxt metric_ty 1))
 
 (* tries to infer the metric space from ct from dist terms,
    if no dist terms are present, equality terms will be used *)
-fun guess_metric ctxt ct =
-let
-  fun find_dist ct =
-    case Thm.term_of ct of
-      Const (\<^const_name>\<open>dist\<close>, ty) $ _ $ _  => SOME (fst (dest_funT ty))
-    | _ $ _ =>
-      let val (s, t) = Thm.dest_comb ct in
-        default (find_dist t) (find_dist s)
-      end
-    | Abs (_, _, _) => find_dist (snd (Thm.dest_abs NONE ct))
-    | _ => NONE
-  fun find_eq ct =
-    case Thm.term_of ct of
-      Const (\<^const_name>\<open>HOL.eq\<close>, ty) $ x $ _ =>
-      let val (l, r) = Thm.dest_binop ct in
-        if Sign.of_sort (Proof_Context.theory_of ctxt) (type_of x, \<^sort>\<open>metric_space\<close>)
-        then SOME (fst (dest_funT ty))
-        else default (find_dist r) (find_eq l)
-      end
-    | _ $ _ =>
-      let val (s, t) = Thm.dest_comb ct in
-        default (find_eq t) (find_eq s)
-      end
-    | Abs (_, _, _) => find_eq (snd (Thm.dest_abs NONE ct))
-    | _ => NONE
-  in
-    case default (find_eq ct) (find_dist ct) of
-      SOME ty => ty
-    | NONE => error "No Metric Space was found"
-  end
-
-(* eliminate \<exists> by proving the goal for a single witness from the metric space *)
-fun elim_exists ctxt goal =
+fun guess_metric ctxt tm =
   let
-    val ct = Thm.cprem_of goal 1
-    val metric_ty = guess_metric ctxt ct
-    val points = find_points ctxt metric_ty ct
+    val thy = Proof_Context.theory_of ctxt
+    fun find_dist t =
+      (case t of
+        \<^Const_>\<open>dist T for _ _\<close>  => SOME T
+      | t1 $ t2 => (case find_dist t1 of NONE => find_dist t2 | some => some)
+      | Abs _ => find_dist (#2 (Term.dest_abs_global t))
+      | _ => NONE)
+    fun find_eq t =
+      (case t of
+        \<^Const_>\<open>HOL.eq T for l r\<close> =>
+          if Sign.of_sort thy (T, \<^sort>\<open>metric_space\<close>) then SOME T
+          else (case find_eq l of NONE => find_eq r | some => some)
+      | t1 $ t2 => (case find_eq t1 of NONE => find_eq t2 | some => some)
+      | Abs _ => find_eq (#2 (Term.dest_abs_global t))
+      | _ => NONE)
+    in
+      (case find_dist tm of
+        SOME ty => ty
+      | NONE =>
+          case find_eq tm of
+            SOME ty => ty
+          | NONE => error "No Metric Space was found")
+    end
 
-    fun try_point ctxt pt =
-      let val ex_rule = infer_instantiate' ctxt [NONE, SOME pt] @{thm exI}
+(* solve \<exists> by proving the goal for a single witness from the metric space *)
+fun exists_tac ctxt = CSUBGOAL (fn (goal, i) =>
+  let
+    val _ = \<^assert> (i = 1)
+    val metric_ty = guess_metric ctxt (Thm.term_of goal)
+    val points = find_points ctxt metric_ty goal
+
+    fun try_point_tac ctxt pt =
+      let
+        val ex_rule =
+          \<^instantiate>\<open>'a = \<open>Thm.ctyp_of_cterm pt\<close> and x = pt in
+            lemma (schematic) \<open>P x \<Longrightarrow> \<exists>x::'a. P x\<close> by (rule exI)\<close>
       in
         HEADGOAL (resolve_tac ctxt [ex_rule] ORELSE'
-        (* variable doesn't occur in body *)
+        (*variable doesn't occur in body*)
         resolve_tac ctxt @{thms exI}) THEN
         trace_tac ctxt ("Removed existential quantifier, try " ^ @{make_string} pt) THEN
-        try_points ctxt
+        HEADGOAL (try_points_tac ctxt)
       end
-    and try_points ctxt goal = (
-      if is_exists (Thm.cprem_of goal 1) then
-        FIRST (map (try_point ctxt) points)
-      else if is_forall (Thm.cprem_of goal 1) then
-        HEADGOAL (resolve_tac ctxt @{thms HOL.allI} THEN'
+    and try_points_tac ctxt = SUBGOAL (fn (g, _) =>
+      if is_exists g then
+        FIRST (map (try_point_tac ctxt) points)
+      else if is_forall g then
+        resolve_tac ctxt @{thms HOL.allI} 1 THEN
         Subgoal.FOCUS (fn {context = ctxt', ...} =>
           trace_tac ctxt "Removed universal quantifier" THEN
-          try_points ctxt') ctxt)
-      else basic_metric_arith_tac ctxt metric_ty) goal
-  in
-    try_points ctxt goal
-  end
+          try_points_tac ctxt' 1) ctxt 1
+      else basic_metric_arith_tac ctxt metric_ty 1)
+  in try_points_tac ctxt 1 end)
 
 fun metric_arith_tac ctxt =
-  (* unfold common definitions to get rid of sets *)
-  unfold_tac ctxt THEN'
-  (* remove all meta-level connectives *)
-  IF_UNSOLVED' (Object_Logic.full_atomize_tac ctxt) THEN'
-  (* convert goal to prenex form *)
-  IF_UNSOLVED' (prenex_tac ctxt) THEN'
-  (* and NNF to ? *)
-  IF_UNSOLVED' (nnf_tac ctxt) THEN'
-  (* turn all universally quantified variables into free variables, by focusing the subgoal *)
-  REPEAT' (resolve_tac ctxt @{thms HOL.allI}) THEN'
-  IF_UNSOLVED' (SUBPROOF (fn {context=ctxt', ...} =>
-    trace_tac ctxt' "Focused on subgoal" THEN
-    elim_exists ctxt') ctxt)
+  SELECT_GOAL (
+    (*unfold common definitions to get rid of sets*)
+    unfold_tac ctxt 1 THEN
+    (*remove all meta-level connectives*)
+    IF_UNSOLVED (Object_Logic.full_atomize_tac ctxt 1) THEN
+    (*convert goal to prenex form*)
+    IF_UNSOLVED (prenex_tac ctxt 1) THEN
+    (*and NNF to ?*)
+    IF_UNSOLVED (nnf_tac ctxt 1) THEN
+    (*turn all universally quantified variables into free variables, by focusing the subgoal*)
+    REPEAT (HEADGOAL (resolve_tac ctxt @{thms HOL.allI})) THEN
+    IF_UNSOLVED (SUBPROOF (fn {context = ctxt', ...} =>
+      trace_tac ctxt' "Focused on subgoal" THEN
+      exists_tac ctxt' 1) ctxt 1))
+
 end

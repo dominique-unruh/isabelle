@@ -67,6 +67,7 @@ sig
   val name_position: (string * Position.T) parser
   val binding: binding parser
   val embedded: string parser
+  val embedded_inner_syntax: string parser
   val embedded_input: Input.source parser
   val embedded_position: (string * Position.T) parser
   val text: string parser
@@ -118,6 +119,11 @@ sig
   val thm: (Facts.ref * Token.src list) parser
   val thms1: (Facts.ref * Token.src list) list parser
   val options: ((string * Position.T) * (string * Position.T)) list parser
+  val embedded_ml: ML_Lex.token Antiquote.antiquote list parser
+  val embedded_ml_underscore: ML_Lex.token Antiquote.antiquote list parser
+  val read_antiq: Keyword.keywords -> 'a parser -> Symbol_Pos.T list * Position.T -> 'a
+  val read_embedded: Proof.context -> Keyword.keywords -> 'a parser -> Input.source -> 'a
+  val read_embedded_src: Proof.context -> Keyword.keywords -> 'a parser -> Token.src -> 'a
 end;
 
 structure Parse: PARSE =
@@ -279,6 +285,7 @@ val embedded =
     (cartouche || string || short_ident || long_ident || sym_ident ||
       term_var || type_ident || type_var || number);
 
+val embedded_inner_syntax = inner_syntax embedded;
 val embedded_input = input embedded;
 val embedded_position = embedded_input >> Input.source_content;
 
@@ -493,5 +500,39 @@ val option =
     Scan.optional ($$$ "=" |-- !!! (position option_value)) ("true", pos));
 
 val options = $$$ "[" |-- list1 option --| $$$ "]";
+
+
+(* embedded ML *)
+
+val embedded_ml =
+  embedded_input >> ML_Lex.read_source ||
+  control >> (ML_Lex.read_symbols o Antiquote.control_symbols);
+
+val embedded_ml_underscore =
+  input underscore >> ML_Lex.read_source || embedded_ml;
+
+
+(* read embedded source, e.g. for antiquotations *)
+
+fun tokenize keywords = Token.tokenize keywords {strict = true} #> filter Token.is_proper;
+
+fun read_antiq keywords scan (syms, pos) =
+  (case Scan.read Token.stopper scan (tokenize (Keyword.no_major_keywords keywords) syms) of
+    SOME res => res
+  | NONE => error ("Malformed antiquotation" ^ Position.here pos));
+
+fun read_embedded ctxt keywords parse input =
+  let
+    val toks = tokenize keywords (Input.source_explode input);
+    val _ = Context_Position.reports_text ctxt (maps (Token.reports keywords) toks);
+  in
+    (case Scan.read Token.stopper parse toks of
+      SOME res => res
+    | NONE => error ("Bad input" ^ Position.here (Input.pos_of input)))
+  end;
+
+fun read_embedded_src ctxt keywords parse src =
+  Token.syntax (Scan.lift embedded_input) src ctxt
+  |> #1 |> read_embedded ctxt keywords parse;
 
 end;

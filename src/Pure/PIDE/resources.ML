@@ -203,7 +203,7 @@ val _ = Theory.setup
     (Args.context -- Scan.lift Parse.embedded_position
       >> (uncurry check_scala_function #> #1 #> ML_Syntax.print_string)) #>
   ML_Antiquotation.value_embedded \<^binding>\<open>scala\<close>
-    (Args.context -- Scan.lift Args.embedded_position >> (fn (ctxt, arg) =>
+    (Args.context -- Scan.lift Parse.embedded_position >> (fn (ctxt, arg) =>
       let
         val (name, multi) = check_scala_function ctxt arg;
         val func = if multi then "Scala.function" else "Scala.function1";
@@ -224,7 +224,6 @@ structure Files = Theory_Data
 (
   type T = files;
   val empty = make_files (Path.current, [], []);
-  val extend = I;
   fun merge ({master_dir, imports, provided = provided1}, {provided = provided2, ...}) =
     let val provided' = Library.merge (op =) (provided1, provided2)
     in make_files (master_dir, imports, provided') end

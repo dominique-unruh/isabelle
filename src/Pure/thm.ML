@@ -48,7 +48,8 @@ sig
   val dest_arg: cterm -> cterm
   val dest_fun2: cterm -> cterm
   val dest_arg1: cterm -> cterm
-  val dest_abs: string option -> cterm -> cterm * cterm
+  val dest_abs_fresh: string -> cterm -> cterm * cterm
+  val dest_abs_global: cterm -> cterm * cterm
   val rename_tvar: indexname -> ctyp -> ctyp
   val var: indexname * ctyp -> cterm
   val apply: cterm -> cterm -> cterm
@@ -156,7 +157,9 @@ sig
   val generalize_cterm: Names.set * Names.set -> int -> cterm -> cterm
   val generalize_ctyp: Names.set -> int -> ctyp -> ctyp
   val instantiate: ctyp TVars.table * cterm Vars.table -> thm -> thm
+  val instantiate_beta: ctyp TVars.table * cterm Vars.table -> thm -> thm
   val instantiate_cterm: ctyp TVars.table * cterm Vars.table -> cterm -> cterm
+  val instantiate_beta_cterm: ctyp TVars.table * cterm Vars.table -> cterm -> cterm
   val trivial: cterm -> thm
   val of_class: ctyp * class -> thm
   val unconstrainT: thm -> thm
@@ -304,12 +307,18 @@ fun dest_arg1 (Cterm {t = c $ a $ _, T = _, cert, maxidx, sorts}) =
       in Cterm {t = a, T = A, cert = cert, maxidx = maxidx, sorts = sorts} end
   | dest_arg1 ct = raise CTERM ("dest_arg1", [ct]);
 
-fun dest_abs a (Cterm {t = Abs (x, T, t), T = Type ("fun", [_, U]), cert, maxidx, sorts}) =
-      let val (y', t') = Term.dest_abs (the_default x a, T, t) in
-        (Cterm {t = Free (y', T), T = T, cert = cert, maxidx = maxidx, sorts = sorts},
-          Cterm {t = t', T = U, cert = cert, maxidx = maxidx, sorts = sorts})
-      end
-  | dest_abs _ ct = raise CTERM ("dest_abs", [ct]);
+fun gen_dest_abs dest ct =
+  (case ct of
+    Cterm {t = t as Abs _, T = Type ("fun", [_, U]), cert, maxidx, sorts} =>
+      let
+        val ((x', T), t') = dest t;
+        val v = Cterm {t = Free (x', T), T = T, cert = cert, maxidx = maxidx, sorts = sorts};
+        val body = Cterm {t = t', T = U, cert = cert, maxidx = maxidx, sorts = sorts};
+      in (v, body) end
+  | _ => raise CTERM ("dest_abs", [ct]));
+
+val dest_abs_fresh = gen_dest_abs o Term.dest_abs_fresh;
+val dest_abs_global = gen_dest_abs Term.dest_abs_global;
 
 
 (* constructors *)
@@ -495,7 +504,7 @@ val tpairs_of = #tpairs o rep_thm;
 val concl_of = Logic.strip_imp_concl o prop_of;
 val prems_of = Logic.strip_imp_prems o prop_of;
 val nprems_of = Logic.count_prems o prop_of;
-fun no_prems th = nprems_of th = 0;
+val no_prems = Logic.no_prems o prop_of;
 
 fun major_prem_of th =
   (case prems_of th of
@@ -523,10 +532,11 @@ fun chyps_of (Thm (_, {cert, shyps, hyps, ...})) =
 (* thm order: ignores theory context! *)
 
 val thm_ord =
-  Term_Ord.fast_term_ord o apply2 prop_of
-  ||| list_ord (prod_ord Term_Ord.fast_term_ord Term_Ord.fast_term_ord) o apply2 tpairs_of
-  ||| list_ord Term_Ord.fast_term_ord o apply2 hyps_of
-  ||| list_ord Term_Ord.sort_ord o apply2 shyps_of;
+  pointer_eq_ord
+  (Term_Ord.fast_term_ord o apply2 prop_of
+    ||| list_ord (prod_ord Term_Ord.fast_term_ord Term_Ord.fast_term_ord) o apply2 tpairs_of
+    ||| list_ord Term_Ord.fast_term_ord o apply2 hyps_of
+    ||| list_ord Term_Ord.sort_ord o apply2 shyps_of);
 
 
 (* implicit theory context *)
@@ -915,7 +925,6 @@ structure Data = Theory_Data
     classes;  (*type classes within the logic*)
 
   val empty : T = (Name_Space.empty_table Markup.oracleN, empty_classes);
-  val extend = I;
   fun merge ((oracles1, sorts1), (oracles2, sorts2)) : T =
     (Name_Space.merge_tables (oracles1, oracles2), merge_classes (sorts1, sorts2));
 );
@@ -1669,7 +1678,7 @@ in
 (*Left-to-right replacements: ctpairs = [..., (vi, ti), ...].
   Instantiates distinct Vars by terms of same type.
   Does NOT normalize the resulting theorem!*)
-fun instantiate (instT, inst) th =
+fun gen_instantiate inst_fn (instT, inst) th =
   if TVars.is_empty instT andalso Vars.is_empty inst then th
   else
     let
@@ -1678,7 +1687,7 @@ fun instantiate (instT, inst) th =
         handle CONTEXT (msg, cTs, cts, ths, context) =>
           raise CONTEXT (msg, cTs, cts, th :: ths, context);
 
-      val subst = Term_Subst.instantiate_maxidx (instT', inst');
+      val subst = inst_fn (instT', inst');
       val (prop', maxidx1) = subst prop ~1;
       val (tpairs', maxidx') =
         fold_map (fn (t, u) => fn i => subst t i ||>> subst u) tpairs maxidx1;
@@ -1702,18 +1711,24 @@ fun instantiate (instT, inst) th =
     end
     handle TYPE (msg, _, _) => raise THM (msg, 0, [th]);
 
-fun instantiate_cterm (instT, inst) ct =
+val instantiate = gen_instantiate Term_Subst.instantiate_maxidx;
+val instantiate_beta = gen_instantiate Term_Subst.instantiate_beta_maxidx;
+
+fun gen_instantiate_cterm inst_fn (instT, inst) ct =
   if TVars.is_empty instT andalso Vars.is_empty inst then ct
   else
     let
       val Cterm {cert, t, T, sorts, ...} = ct;
       val ((instT', inst'), (cert', sorts')) = prep_insts (instT, inst) (cert, sorts);
-      val subst = Term_Subst.instantiate_maxidx (instT', inst');
+      val subst = inst_fn (instT', inst');
       val substT = Term_Subst.instantiateT_maxidx instT';
       val (t', maxidx1) = subst t ~1;
       val (T', maxidx') = substT T maxidx1;
     in Cterm {cert = cert', t = t', T = T', sorts = sorts', maxidx = maxidx'} end
     handle TYPE (msg, _, _) => raise CTERM (msg, [ct]);
+
+val instantiate_cterm = gen_instantiate_cterm Term_Subst.instantiate_maxidx;
+val instantiate_beta_cterm = gen_instantiate_cterm Term_Subst.instantiate_beta_maxidx;
 
 end;
 

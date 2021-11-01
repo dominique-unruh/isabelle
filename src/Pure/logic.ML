@@ -11,7 +11,7 @@ sig
   val all: term -> term -> term
   val dependent_all_name: string * term -> term -> term
   val is_all: term -> bool
-  val dest_all: term -> (string * typ) * term
+  val dest_all_global: term -> (string * typ) * term
   val list_all: (string * typ) list * term -> term
   val all_constraint: (string -> typ option) -> string * string -> term -> term
   val dependent_all_constraint: (string -> typ option) -> string * string -> term -> term
@@ -25,6 +25,7 @@ sig
   val strip_imp_concl: term -> term
   val strip_prems: int * term list * term -> term list * term
   val count_prems: term -> int
+  val no_prems: term -> bool
   val nth_prem: int * term -> term
   val close_term: (string * term) list -> term -> term
   val close_prop: (string * term) list -> term list -> term -> term
@@ -124,10 +125,10 @@ fun dependent_all_name (x, v) t =
 fun is_all (Const ("Pure.all", _) $ Abs _) = true
   | is_all _ = false;
 
-fun dest_all (Const ("Pure.all", _) $ Abs (abs as (_, T, _))) =
-      let val (x, b) = Term.dest_abs abs  (*potentially slow*)
-      in ((x, T), b) end
-  | dest_all t = raise TERM ("dest_all", [t]);
+fun dest_all_global t =
+  (case t of
+    Const ("Pure.all", _) $ (u as Abs _) => Term.dest_abs_global u
+  | _ => raise TERM ("dest_all", [t]));
 
 fun list_all ([], t) = t
   | list_all ((a, T) :: vars, t) = all_const T $ Abs (a, T, list_all (vars, t));
@@ -207,6 +208,9 @@ fun strip_prems (0, As, B) = (As, B)
 (*Count premises -- quicker than (length o strip_prems) *)
 fun count_prems (Const ("Pure.imp", _) $ _ $ B) = 1 + count_prems B
   | count_prems _ = 0;
+
+fun no_prems (Const ("Pure.imp", _) $ _ $ _) = false
+  | no_prems _ = true;
 
 (*Select Ai from A1\<Longrightarrow>...Ai\<Longrightarrow>B*)
 fun nth_prem (1, Const ("Pure.imp", _) $ A $ _) = A

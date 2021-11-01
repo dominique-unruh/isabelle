@@ -41,13 +41,13 @@ fun basic_dloqe ctxt stupid dlo_qeth dlo_qeth_nolb dlo_qeth_noub gather ep =
           simplify (put_simpset HOL_basic_ss ctxt addsimps gather)
             (Thm.instantiate' [] [SOME p] stupid)
         val (L, U) =
-          let val (_, q) = Thm.dest_abs NONE (Thm.dest_arg (Thm.rhs_of ths))
+          let val (_, q) = Thm.dest_abs_global (Thm.dest_arg (Thm.rhs_of ths))
           in (Thm.dest_arg1 q |> Thm.dest_arg1, Thm.dest_arg q |> Thm.dest_arg1) end
         fun proveneF S =
           let
             val (a, A) = Thm.dest_comb S |>> Thm.dest_arg
             val cT = Thm.ctyp_of_cterm a
-            val ne = Thm.instantiate' [SOME cT] [SOME a, SOME A] @{thm insert_not_empty}
+            val ne = \<^instantiate>\<open>'a = cT and a and A in lemma \<open>insert a A \<noteq> {}\<close> by simp\<close>
             val f = prove_finite cT (dest_set S)
          in (ne, f) end
 
@@ -81,7 +81,7 @@ fun conjuncts ct =
   | _ => [ct]);
 
 val list_conj =
-  foldr1 (fn (c, c') => Thm.apply (Thm.apply \<^cterm>\<open>HOL.conj\<close> c) c');
+  foldr1 (fn (A, B) => \<^instantiate>\<open>A and B in cterm \<open>A \<and> B\<close>\<close>);
 
 fun mk_conj_tab th =
   let
@@ -112,7 +112,8 @@ fun conj_aci_rule eq =
     val rr = Thm.dest_arg r
     val thl  = prove_conj tabl (conjuncts rr) |> Drule.implies_intr_hyps
     val thr  = prove_conj tabr (conjuncts ll) |> Drule.implies_intr_hyps
-    val eqI = Thm.instantiate' [] [SOME ll, SOME rr] @{thm iffI}
+    val eqI =
+      \<^instantiate>\<open>P = ll and Q = rr in lemma \<open>(P \<Longrightarrow> Q) \<Longrightarrow> (Q \<Longrightarrow> P) \<Longrightarrow> P \<longleftrightarrow> Q\<close> by (rule iffI)\<close>
   in Thm.implies_elim (Thm.implies_elim eqI thl) thr |> mk_meta_eq end;
 
 fun contains x ct =
@@ -128,11 +129,11 @@ local
 
 fun proc ctxt ct =
   (case Thm.term_of ct of
-    \<^Const_>\<open>Ex _ for \<open>Abs (xn, _, _)\<close>\<close> =>
+    \<^Const_>\<open>Ex _ for \<open>Abs _\<close>\<close> =>
       let
         val e = Thm.dest_fun ct
-        val (x,p) = Thm.dest_abs (SOME xn) (Thm.dest_arg ct)
-        val Pp = Thm.apply \<^cterm>\<open>Trueprop\<close> p
+        val (x,p) = Thm.dest_abs_global (Thm.dest_arg ct)
+        val Free (xn, _) = Thm.term_of x
         val (eqs,neqs) = List.partition (is_eqx x) (all_conjuncts p)
       in
         (case eqs of
@@ -143,8 +144,8 @@ fun proc ctxt ct =
               case ndx of
                 [] => NONE
               | _ =>
-                conj_aci_rule (Thm.mk_binop \<^cterm>\<open>(\<equiv>) :: prop => _\<close> Pp
-                  (Thm.apply \<^cterm>\<open>Trueprop\<close> (list_conj (ndx @ dx))))
+                conj_aci_rule
+                  \<^instantiate>\<open>A = p and B = \<open>list_conj (ndx @ dx)\<close> in cterm \<open>Trueprop A \<equiv> Trueprop B\<close>\<close>
                 |> Thm.abstract_rule xn x
                 |> Drule.arg_cong_rule e
                 |> Conv.fconv_rule
@@ -154,8 +155,8 @@ fun proc ctxt ct =
                 |> SOME
             end
         | _ =>
-            conj_aci_rule (Thm.mk_binop \<^cterm>\<open>(\<equiv>) :: prop => _\<close> Pp
-              (Thm.apply \<^cterm>\<open>Trueprop\<close> (list_conj (eqs @ neqs))))
+            conj_aci_rule
+              \<^instantiate>\<open>A = p and B = \<open>list_conj (eqs @ neqs)\<close> in cterm \<open>Trueprop A \<equiv> Trueprop B\<close>\<close>
             |> Thm.abstract_rule xn x |> Drule.arg_cong_rule e
             |> Conv.fconv_rule
                 (Conv.arg_conv
@@ -193,29 +194,29 @@ fun raw_dlo_conv ctxt dlo_ss ({qe_bnds, qe_nolb, qe_noub, gst, gs, ...}: Langfor
 
 val grab_atom_bop =
   let
-    fun h bounds tm =
+    fun h ctxt tm =
       (case Thm.term_of tm of
-        \<^Const_>\<open>HOL.eq \<^Type>\<open>bool\<close> for _ _\<close> => find_args bounds tm
-      | \<^Const_>\<open>Not for _\<close> => h bounds (Thm.dest_arg tm)
-      | \<^Const_>\<open>All _ for _\<close> => find_body bounds (Thm.dest_arg tm)
-      | \<^Const_>\<open>Pure.all _ for _\<close> => find_body bounds (Thm.dest_arg tm)
-      | \<^Const_>\<open>Ex _ for _\<close> => find_body bounds (Thm.dest_arg tm)
-      | \<^Const_>\<open>HOL.conj for _ _\<close> => find_args bounds tm
-      | \<^Const_>\<open>HOL.disj for _ _\<close> => find_args bounds tm
-      | \<^Const_>\<open>HOL.implies for _ _\<close> => find_args bounds tm
-      | \<^Const_>\<open>Pure.imp for _ _\<close> => find_args bounds tm
-      | \<^Const_>\<open>Pure.eq _ for _ _\<close> => find_args bounds tm
-      | \<^Const_>\<open>Trueprop for _\<close> => h bounds (Thm.dest_arg tm)
+        \<^Const_>\<open>HOL.eq \<^Type>\<open>bool\<close> for _ _\<close> => find_args ctxt tm
+      | \<^Const_>\<open>Not for _\<close> => h ctxt (Thm.dest_arg tm)
+      | \<^Const_>\<open>All _ for _\<close> => find_body ctxt (Thm.dest_arg tm)
+      | \<^Const_>\<open>Pure.all _ for _\<close> => find_body ctxt (Thm.dest_arg tm)
+      | \<^Const_>\<open>Ex _ for _\<close> => find_body ctxt (Thm.dest_arg tm)
+      | \<^Const_>\<open>HOL.conj for _ _\<close> => find_args ctxt tm
+      | \<^Const_>\<open>HOL.disj for _ _\<close> => find_args ctxt tm
+      | \<^Const_>\<open>HOL.implies for _ _\<close> => find_args ctxt tm
+      | \<^Const_>\<open>Pure.imp for _ _\<close> => find_args ctxt tm
+      | \<^Const_>\<open>Pure.eq _ for _ _\<close> => find_args ctxt tm
+      | \<^Const_>\<open>Trueprop for _\<close> => h ctxt (Thm.dest_arg tm)
       | _ => Thm.dest_fun2 tm)
-    and find_args bounds tm =
-      (h bounds (Thm.dest_arg tm) handle CTERM _ => h bounds (Thm.dest_arg1 tm))
-    and find_body bounds b =
-      let val (_, b') = Thm.dest_abs (SOME (Name.bound bounds)) b
-      in h (bounds + 1) b' end;
+    and find_args ctxt tm =
+      (h ctxt (Thm.dest_arg tm) handle CTERM _ => h ctxt (Thm.dest_arg1 tm))
+    and find_body ctxt b =
+      let val ((_, b'), ctxt') = Variable.dest_abs_cterm b ctxt
+      in h ctxt' b' end;
   in h end;
 
 fun dlo_instance ctxt tm =
-  (fst (Langford_Data.get ctxt), Langford_Data.match ctxt (grab_atom_bop 0 tm));
+  (fst (Langford_Data.get ctxt), Langford_Data.match ctxt (grab_atom_bop ctxt tm));
 
 fun dlo_conv ctxt tm =
   (case dlo_instance ctxt tm of
@@ -240,7 +241,7 @@ fun cfrees ats ct =
           then ins (Thm.dest_arg t) (ins (Thm.dest_arg1 t) acc)
           else h (h acc (Thm.dest_arg t)) (Thm.dest_fun t)
       | _ $ _ => h (h acc (Thm.dest_arg t)) (Thm.dest_fun t)
-      | Abs _ => Thm.dest_abs NONE t ||> h acc |> uncurry (remove (op aconvc))
+      | Abs _ => Thm.dest_abs_global t ||> h acc |> uncurry (remove (op aconvc))
       | Free _ => if member (op aconvc) ats t then acc else ins t acc
       | Var _ => if member (op aconvc) ats t then acc else ins t acc
       | _ => acc)

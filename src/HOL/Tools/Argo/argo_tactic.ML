@@ -81,7 +81,7 @@ val timeout = Attrib.setup_config_real \<^binding>\<open>argo_timeout\<close> (K
 
 val timeout_seconds = seconds o Config.apply timeout
 
-fun with_timeout ctxt f x = Timeout.apply (timeout_seconds ctxt) f x
+fun with_timeout f ctxt = Timeout.apply (timeout_seconds ctxt) f ctxt
 
 
 (* extending the tactic *)
@@ -105,7 +105,6 @@ structure Extensions = Theory_Data
 (
   type T = (serial * extension) list
   val empty = []
-  val extend = I
   val merge = merge eq_extension 
 )
 
@@ -303,14 +302,12 @@ fun under_assumption f ct =
   let val cprop = as_prop ct
   in Thm.implies_intr cprop (f (Thm.assume cprop)) end
 
-fun instantiate cv ct =
-  Thm.instantiate (TVars.empty, Vars.make [(Term.dest_Var (Thm.term_of cv), ct)])
-
 
 (* proof replay for tautologies *)
 
-fun prove_taut ctxt ns t = Goal.prove ctxt ns [] (HOLogic.mk_Trueprop t)
-  (fn {context, ...} => HEADGOAL (Classical.fast_tac context))
+fun prove_taut ctxt ns t =
+  Goal.prove ctxt ns [] (HOLogic.mk_Trueprop t)
+    (fn {context = ctxt', ...} => HEADGOAL (Classical.fast_tac ctxt'))
 
 fun with_frees ctxt n mk =
   let
@@ -517,8 +514,6 @@ fun replay_clause is thm = replay_with_lits is thm []
 
 (* proof replay for unit resolution *)
 
-val unit_rule = @{lemma "(P \<Longrightarrow> False) \<Longrightarrow> (\<not>P \<Longrightarrow> False) \<Longrightarrow> False" by fast}
-val unit_rule_var = Thm.dest_arg (Thm.dest_arg1 (Thm.cprem_of unit_rule 1))
 val bogus_ct = \<^cterm>\<open>True\<close>
 
 fun replay_unit_res lit (pthm, plits) (nthm, nlits) =
@@ -527,8 +522,8 @@ fun replay_unit_res lit (pthm, plits) (nthm, nlits) =
     val nlit = the (AList.lookup (op =) nlits (~lit))
     val prune = Ord_List.remove lit_ord (lit, bogus_ct)
   in
-    unit_rule
-    |> instantiate unit_rule_var (Thm.dest_arg plit)
+    \<^instantiate>\<open>P = \<open>Thm.dest_arg plit\<close> in
+      lemma "(P \<Longrightarrow> False) \<Longrightarrow> (\<not>P \<Longrightarrow> False) \<Longrightarrow> False" by fast\<close>
     |> Thm.elim_implies (Thm.implies_intr plit pthm)
     |> Thm.elim_implies (Thm.implies_intr nlit nthm)
     |> rpair (Ord_List.union lit_ord (prune nlits) (prune plits))
@@ -553,10 +548,8 @@ fun replay_lemma is (thm, lits) = replay_with_lits is thm lits
 
 (* proof replay for reflexivity *)
 
-val refl_rule = @{thm refl}
-val refl_rule_var = Thm.dest_arg1 (Thm.dest_arg (Thm.cprop_of refl_rule))
-
-fun replay_refl ct = Thm.instantiate (Thm.match (refl_rule_var, ct)) refl_rule
+fun replay_refl x =
+  \<^instantiate>\<open>'a = \<open>Thm.ctyp_of_cterm x\<close> and x in lemma \<open>x = x\<close> by (rule refl)\<close>
 
 
 (* proof replay for symmetry *)
@@ -663,13 +656,15 @@ fun replay ctxt terms facts proof =
 
 (* normalizing goals *)
 
+fun instantiate v ct = Thm.instantiate (TVars.empty, Vars.make [(v, ct)])
+
 fun instantiate_elim_rule thm =
-  let val ct = Drule.strip_imp_concl (Thm.cprop_of thm)
+  let
+    val ct = Drule.strip_imp_concl (Thm.cprop_of thm)
   in
     (case Thm.term_of ct of
-      \<^Const_>\<open>Trueprop for \<open>Var (_, \<^Type>\<open>bool\<close>)\<close>\<close> =>
-        instantiate (Thm.dest_arg ct) \<^cterm>\<open>False\<close> thm
-    | Var _ => instantiate ct \<^cprop>\<open>False\<close> thm
+      \<^Const_>\<open>Trueprop for \<open>Var (v as (_, \<^Type>\<open>bool\<close>))\<close>\<close> => instantiate v \<^cterm>\<open>False\<close> thm
+    | Var v => instantiate v \<^cprop>\<open>False\<close> thm
     | _ => thm)
   end
 
@@ -715,11 +710,11 @@ fun prove thms ctxt =
 fun argo_tac ctxt thms =
   CONVERSION (Conv.params_conv ~1 (K (Conv.concl_conv ~1
     (Conv.try_conv (Conv.rewr_conv @{thm atomize_eq})))) ctxt)
-  THEN' Tactic.resolve_tac ctxt [@{thm ccontr}]
-  THEN' Subgoal.FOCUS (fn {context, prems, ...} =>
-    (case with_timeout context (prove (thms @ prems)) context of
-      (SOME thm, _) => Tactic.resolve_tac context [thm] 1
-    | (NONE, _) => Tactical.no_tac)) ctxt
+  THEN' resolve_tac ctxt [@{thm ccontr}]
+  THEN' Subgoal.FOCUS (fn {context = ctxt', prems, ...} =>
+    (case with_timeout (prove (thms @ prems)) ctxt' of
+      (SOME thm, _) => resolve_tac ctxt' [thm] 1
+    | (NONE, _) => no_tac)) ctxt
 
 val _ =
   Theory.setup (Method.setup \<^binding>\<open>argo\<close>

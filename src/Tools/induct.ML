@@ -233,7 +233,6 @@ structure Data = Generic_Data
      (init_rules (left_var_concl o #2), init_rules (Thm.concl_of o #2)),
      simpset_of (empty_simpset \<^context>
       addsimprocs [rearrange_eqs_simproc] addsimps [Drule.norm_hhf_eq]));
-  val extend = I;
   fun merge (((casesT1, casesP1), (inductT1, inductP1), (coinductT1, coinductP1), simpset1),
       ((casesT2, casesP2), (inductT2, inductP2), (coinductT2, coinductP2), simpset2)) =
     ((Item_Net.merge (casesT1, casesT2), Item_Net.merge (casesP1, casesP2)),
@@ -444,8 +443,8 @@ fun trace_rules _ kind [] = error ("Unable to figure out " ^ kind ^ " rule")
 val equal_def' = Thm.symmetric Induct_Args.equal_def;
 
 fun mark_constraints n ctxt = Conv.fconv_rule
-  (Conv.prems_conv ~1 (Conv.params_conv ~1 (K (Conv.prems_conv n
-     (Raw_Simplifier.rewrite ctxt false [equal_def']))) ctxt));
+  (Conv.prems_conv ~1 (Conv.params_conv ~1 (fn ctxt' =>
+      Conv.prems_conv n (Raw_Simplifier.rewrite ctxt' false [equal_def'])) ctxt));
 
 fun unmark_constraints ctxt =
   Conv.fconv_rule (Raw_Simplifier.rewrite ctxt true [Induct_Args.equal_def]);

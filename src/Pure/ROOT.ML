@@ -240,7 +240,7 @@ ML_file "Thy/latex.ML";
 ML_file "ML/ml_context.ML";
 ML_file "ML/ml_antiquotation.ML";
 ML_file "ML/ml_compiler2.ML";
-ML_file "ML/ml_antiquotations1.ML";
+ML_file "ML/ml_antiquotations.ML";
 
 
 section "Bootstrap phase 3: towards theory Pure and final ML toplevel setup";
@@ -303,8 +303,6 @@ ML_file "System/isabelle_system.ML";
 (*theory documents*)
 ML_file "Thy/term_style.ML";
 ML_file "Isar/outer_syntax.ML";
-ML_file "ML/ml_antiquotations2.ML";
-ML_file "ML/ml_pid.ML";
 ML_file "Thy/document_antiquotation.ML";
 ML_file "Thy/document_output.ML";
 ML_file "Thy/document_antiquotations.ML";
@@ -319,6 +317,13 @@ ML_file "Thy/export_theory.ML";
 ML_file "Thy/sessions.ML";
 ML_file "PIDE/session.ML";
 ML_file "PIDE/document.ML";
+
+(*ML add-ons*)
+ML_file "ML/ml_pp.ML";
+ML_file "ML/ml_thms.ML";
+ML_file "ML/ml_instantiate.ML";
+ML_file "ML/ml_file.ML";
+ML_file "ML/ml_pid.ML";
 
 (*theory and proof operations*)
 ML_file "Isar/isar_cmd.ML";
@@ -337,10 +342,6 @@ ML_file "General/output_primitives_virtual.ML";
 
 
 subsection "Miscellaneous tools and packages for Pure Isabelle";
-
-ML_file "ML/ml_pp.ML";
-ML_file "ML/ml_thms.ML";
-ML_file "ML/ml_file.ML";
 
 ML_file "Tools/build.ML";
 ML_file "Tools/named_thms.ML";

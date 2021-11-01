@@ -24,6 +24,8 @@ sig
   val every_conv: conv list -> conv
   val try_conv: conv -> conv
   val repeat_conv: conv -> conv
+  val changed_conv: conv -> conv
+  val repeat_changed_conv: conv -> conv
   val cache_conv: conv -> conv
   val abs_conv: (cterm * Proof.context -> conv) -> Proof.context -> conv
   val combination_conv: conv -> conv -> conv
@@ -39,6 +41,9 @@ sig
   val implies_concl_conv: conv -> conv
   val rewr_conv: thm -> conv
   val rewrs_conv: thm list -> conv
+  val bottom_rewrs_conv: thm list -> Proof.context -> conv
+  val top_rewrs_conv: thm list -> Proof.context -> conv
+  val top_sweep_rewrs_conv: thm list -> Proof.context -> conv
   val sub_conv: (Proof.context -> conv) -> Proof.context -> conv
   val bottom_conv: (Proof.context -> conv) -> Proof.context -> conv
   val top_conv: (Proof.context -> conv) -> Proof.context -> conv
@@ -81,6 +86,12 @@ fun every_conv cvs = fold_rev (curry op then_conv) cvs all_conv;
 fun try_conv cv = cv else_conv all_conv;
 fun repeat_conv cv ct = try_conv (cv then_conv repeat_conv cv) ct;
 
+fun changed_conv conv ct =
+  let val th = conv ct
+  in if Thm.is_reflexive th then raise CTERM ("changed_conv", [ct]) else th end;
+
+val repeat_changed_conv = repeat_conv o changed_conv;
+
 fun cache_conv (cv: conv) = Ctermtab.cterm_cache cv;
 
 
@@ -91,12 +102,11 @@ fun cache_conv (cv: conv) = Ctermtab.cterm_cache cv;
 
 fun abs_conv cv ctxt ct =
   (case Thm.term_of ct of
-    Abs (x, _, _) =>
+    Abs (a, _, _) =>
       let
-        val (u, ctxt') = yield_singleton Variable.variant_fixes Name.uu ctxt;
-        val (v, ct') = Thm.dest_abs (SOME u) ct;
+        val ((v, ct'), ctxt') = Variable.dest_abs_cterm ct ctxt;
         val eq = cv (v, ctxt') ct';
-      in if Thm.is_reflexive eq then all_conv ct else Thm.abstract_rule x v eq end
+      in if Thm.is_reflexive eq then all_conv ct else Thm.abstract_rule a v eq end
   | _ => raise CTERM ("abs_conv", [ct]));
 
 fun combination_conv cv1 cv2 ct =
@@ -154,8 +164,9 @@ fun implies_concl_conv cv ct =
   | _ => raise CTERM ("implies_concl_conv", [ct]));
 
 
-(* single rewrite step, cf. REWR_CONV in HOL *)
+(* rewrite steps *)
 
+(*cf. REWR_CONV in HOL*)
 fun rewr_conv rule ct =
   let
     val rule1 = Thm.incr_indexes (Thm.maxidx_of_cterm ct + 1) rule;
@@ -172,6 +183,10 @@ fun rewr_conv rule ct =
   in Thm.transitive rule4 (Thm.beta_conversion true (Thm.rhs_of rule4)) end;
 
 fun rewrs_conv rules = first_conv (map rewr_conv rules);
+
+fun bottom_rewrs_conv rewrs = bottom_conv (K (try_conv (rewrs_conv rewrs)));
+fun top_rewrs_conv rewrs = top_conv (K (try_conv (rewrs_conv rewrs)));
+fun top_sweep_rewrs_conv rewrs = top_sweep_conv (K (rewrs_conv rewrs));
 
 
 (* conversions on HHF rules *)
