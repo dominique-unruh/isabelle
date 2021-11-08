@@ -7,9 +7,6 @@ Position properties.
 package isabelle
 
 
-import java.io.{File => JFile}
-
-
 object Position
 {
   type T = Properties.T
@@ -29,7 +26,7 @@ object Position
   val Def_File = new Properties.String(Markup.DEF_FILE)
   val Def_Id = new Properties.Long(Markup.DEF_ID)
 
-  val Def_Theory = new Properties.Long(Markup.DEF_THEORY)
+  val Def_Theory = new Properties.String(Markup.DEF_THEORY)
 
   object Line_File
   {
@@ -62,6 +59,17 @@ object Position
       (pos, pos) match {
         case (Offset(start), End_Offset(stop)) if start <= stop => Some(Text.Range(start, stop))
         case (Offset(start), _) => Some(Text.Range(start, start + 1))
+        case _ => None
+      }
+  }
+
+  object Def_Range
+  {
+    def apply(range: Symbol.Range): T = Def_Offset(range.start) ::: Def_End_Offset(range.stop)
+    def unapply(pos: T): Option[Symbol.Range] =
+      (pos, pos) match {
+        case (Def_Offset(start), Def_End_Offset(stop)) if start <= stop => Some(Text.Range(start, stop))
+        case (Def_Offset(start), _) => Some(Text.Range(start, start + 1))
         case _ => None
       }
   }

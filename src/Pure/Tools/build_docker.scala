@@ -12,7 +12,7 @@ object Build_Docker
   private val default_base = "ubuntu"
   private lazy val default_logic = Isabelle_System.getenv("ISABELLE_LOGIC")
 
-  private val Isabelle_Name = """^.*?(Isabelle[^/\\:]+)_linux\.tar\.gz$""".r
+  private val Isabelle_Name = """^.*?(Isabelle[^/\\:]+)_linux(?:_arm)?\.tar\.gz$""".r
 
   val packages: List[String] =
     List("curl", "less", "libfontconfig1", "libgomp1", "pwgen", "unzip")
@@ -65,8 +65,8 @@ WORKDIR /home/isabelle
 """
 RUN tar xzf Isabelle.tar.gz && \
   mv """ + isabelle_name + """ Isabelle && \
-  perl -pi -e 's,ISABELLE_HOME_USER=.*,ISABELLE_HOME_USER="\$USER_HOME/.isabelle",g;' Isabelle/etc/settings && \
-  perl -pi -e 's,ISABELLE_LOGIC=.*,ISABELLE_LOGIC=""" + logic + """,g;' Isabelle/etc/settings && \
+  sed -i -e 's,ISABELLE_HOME_USER=.*,ISABELLE_HOME_USER="\$USER_HOME/.isabelle",g;' Isabelle/etc/settings && \
+  sed -i -e 's,ISABELLE_LOGIC=.*,ISABELLE_LOGIC=""" + logic + """,g;' Isabelle/etc/settings && \
   Isabelle/bin/isabelle build -o system_heaps -b """ + logic + """ && \
   rm Isabelle.tar.gz""" +
  (if (entrypoint) """

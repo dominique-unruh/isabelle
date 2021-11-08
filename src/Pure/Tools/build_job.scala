@@ -19,12 +19,12 @@ object Build_Job
   def read_theory(
     db_context: Sessions.Database_Context,
     resources: Resources,
-    session: String,
+    session_hierarchy: List[String],
     theory: String,
     unicode_symbols: Boolean = false): Option[Command] =
   {
     def read(name: String): Export.Entry =
-      db_context.get_export(List(session), theory, name)
+      db_context.get_export(session_hierarchy, theory, name)
 
     def read_xml(name: String): XML.Body =
       YXML.parse_body(
@@ -118,7 +118,8 @@ object Build_Job
             if (theories.isEmpty) used_theories else used_theories.filter(theories.toSet)
           for (thy <- print_theories) {
             val thy_heading = "\nTheory " + quote(thy) + ":"
-            read_theory(db_context, resources, session_name, thy, unicode_symbols = unicode_symbols)
+            read_theory(db_context, resources, List(session_name), thy,
+              unicode_symbols = unicode_symbols)
             match {
               case None => progress.echo(thy_heading + " MISSING")
               case Some(command) =>
@@ -325,7 +326,7 @@ class Build_Job(progress: Progress,
               case _ => false
             }
 
-          private def export(msg: Prover.Protocol_Output): Boolean =
+          private def export_(msg: Prover.Protocol_Output): Boolean =
             msg.properties match {
               case Protocol.Export(args) =>
                 export_consumer(session_name, args, msg.chunk)
@@ -337,7 +338,7 @@ class Build_Job(progress: Progress,
             List(
               Markup.Build_Session_Finished.name -> build_session_finished,
               Markup.Loading_Theory.name -> loading_theory,
-              Markup.EXPORT -> export,
+              Markup.EXPORT -> export_,
               fun(Markup.Theory_Timing.name, theory_timings, Markup.Theory_Timing.unapply),
               fun(Markup.Session_Timing.name, session_timings, Markup.Session_Timing.unapply),
               fun(Markup.Task_Statistics.name, task_statistics, Markup.Task_Statistics.unapply))
@@ -364,7 +365,7 @@ class Build_Job(progress: Progress,
             if (!progress.stopped) {
               val rendering = new Rendering(snapshot, options, session)
 
-              def export(name: String, xml: XML.Body, compress: Boolean = true): Unit =
+              def export_(name: String, xml: XML.Body, compress: Boolean = true): Unit =
               {
                 if (!progress.stopped) {
                   val theory_name = snapshot.node_name.theory
@@ -375,7 +376,7 @@ class Build_Job(progress: Progress,
                 }
               }
               def export_text(name: String, text: String, compress: Boolean = true): Unit =
-                export(name, List(XML.Text(text)), compress = compress)
+                export_(name, List(XML.Text(text)), compress = compress)
 
               for (command <- snapshot.snippet_command) {
                 export_text(Export.DOCUMENT_ID, command.id.toString, compress = false)
@@ -385,10 +386,10 @@ class Build_Job(progress: Progress,
                 cat_lines(snapshot.node_files.map(_.symbolic.node)), compress = false)
 
               for (((_, xml), i) <- snapshot.xml_markup_blobs().zipWithIndex) {
-                export(Export.MARKUP + (i + 1), xml)
+                export_(Export.MARKUP + (i + 1), xml)
               }
-              export(Export.MARKUP, snapshot.xml_markup())
-              export(Export.MESSAGES, snapshot.messages.map(_._1))
+              export_(Export.MARKUP, snapshot.xml_markup())
+              export_(Export.MESSAGES, snapshot.messages.map(_._1))
 
               val citations = Library.distinct(rendering.citations(Text.Range.full).map(_.info))
               export_text(Export.DOCUMENT_CITATIONS, cat_lines(citations))

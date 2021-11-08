@@ -94,6 +94,12 @@ object Export_Theory
       locale_dependencies.iterator.map(_.no_content) ++
       (for { (_, xs) <- others; x <- xs.iterator } yield x.no_content)
 
+    lazy val entity_by_range: Map[Symbol.Range, List[Entity[No_Content]]] =
+      entity_iterator.toList.groupBy(_.range)
+
+    lazy val entity_by_kind_name: Map[(String, String), Entity[No_Content]] =
+      entity_iterator.map(entity => ((entity.kind, entity.name), entity)).toMap
+
     lazy val entity_kinds: Set[String] =
       entity_iterator.map(_.kind).toSet
 
@@ -116,19 +122,24 @@ object Export_Theory
         (for ((k, xs) <- others.iterator) yield cache.string(k) -> xs.map(_.cache(cache))).toMap)
   }
 
+  def read_theory_parents(provider: Export.Provider, theory_name: String): Option[List[String]] =
+  {
+    if (theory_name == Thy_Header.PURE) Some(Nil)
+    else {
+      provider(Export.THEORY_PREFIX + "parents")
+        .map(entry => split_lines(entry.uncompressed.text))
+    }
+  }
+
+  def no_theory: Theory =
+    Theory("", Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil, Map.empty)
+
   def read_theory(provider: Export.Provider, session_name: String, theory_name: String,
     cache: Term.Cache = Term.Cache.none): Theory =
   {
     val parents =
-      if (theory_name == Thy_Header.PURE) Nil
-      else {
-        provider(Export.THEORY_PREFIX + "parents") match {
-          case Some(entry) => split_lines(entry.uncompressed.text)
-          case None =>
-            error("Missing theory export in session " + quote(session_name) + ": " +
-              quote(theory_name))
-        }
-      }
+      read_theory_parents(provider, theory_name) getOrElse
+        error("Missing theory export in session " + quote(session_name) + ": " + quote(theory_name))
     val theory =
       Theory(theory_name, parents,
         read_types(provider),
@@ -182,19 +193,15 @@ object Export_Theory
     val DOCUMENT_HEADING = "document_heading"
     val DOCUMENT_TEXT = "document_text"
     val PROOF_TEXT = "proof_text"
-
-    def export(kind: String): String =
-      kind match {
-        case Markup.TYPE_NAME => TYPE
-        case Markup.CONSTANT => CONST
-        case _ => kind
-      }
   }
 
   def export_kind(kind: String): String =
-    if (kind == Markup.TYPE_NAME) "type"
-    else if (kind == Markup.CONSTANT) "const"
+    if (kind == Markup.TYPE_NAME) Kind.TYPE
+    else if (kind == Markup.CONSTANT) Kind.CONST
     else kind
+
+  def export_kind_name(kind: String, name: String): String =
+    name + "|" + export_kind(kind)
 
   abstract class Content[T]
   {
@@ -213,7 +220,10 @@ object Export_Theory
     serial: Long,
     content: Option[A])
   {
-    def export_kind: String = Kind.export(kind)
+    val kname: String = export_kind_name(kind, name)
+    val range: Symbol.Range = Position.Range.unapply(pos).getOrElse(Text.Range.offside)
+
+    def export_kind: String = Export_Theory.export_kind(kind)
     override def toString: String = export_kind + " " + quote(name)
 
     def the_content: A =

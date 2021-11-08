@@ -85,6 +85,7 @@ sig
   val wordsN: string val words: T
   val hiddenN: string val hidden: T
   val deleteN: string val delete: T
+  val load_commandN: string
   val bash_functionN: string
   val scala_functionN: string
   val system_optionN: string
@@ -157,6 +158,7 @@ sig
   val descriptionN: string
   val inputN: string val input: bool -> Properties.T -> T
   val command_keywordN: string val command_keyword: T
+  val command_spanN: string val command_span: string -> T
   val commandN: string val command_properties: T -> T
   val keywordN: string val keyword_properties: T -> T
   val stringN: string val string: T
@@ -476,6 +478,7 @@ val (deleteN, delete) = markup_elem "delete";
 
 (* misc entities *)
 
+val load_commandN = "load_command";
 val bash_functionN = "bash_function";
 val scala_functionN = "scala_function";
 val system_optionN = "system_option";
@@ -590,6 +593,7 @@ fun input delimited props = (inputN, (delimitedN, Value.print_bool delimited) ::
 (* outer syntax *)
 
 val (command_keywordN, command_keyword) = markup_elem "command_keyword";
+val (command_spanN, command_span) = markup_string "command_span" nameN;
 
 val commandN = "command"; val command_properties = properties [(kindN, commandN)];
 val keywordN = "keyword"; val keyword_properties = properties [(kindN, keywordN)];
