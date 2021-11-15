@@ -185,9 +185,6 @@ object Document_Build
 
     def document_bibliography: Boolean = options.bool("document_bibliography")
 
-    def document_preprocessor: Option[String] =
-      proper_string(options.string("document_preprocessor"))
-
     def document_logo: Option[String] =
       options.string("document_logo") match {
         case "" => None
@@ -256,11 +253,10 @@ object Document_Build
 
     def prepare_directory(dir: Path, doc: Document_Variant): Directory =
     {
-      val doc_dir = dir + Path.basic(doc.name)
-      Isabelle_System.make_directory(doc_dir)
+      val doc_dir = Isabelle_System.make_directory(dir + Path.basic(doc.name))
 
 
-      /* sources */
+      /* actual sources: with SHA1 digest */
 
       isabelle_styles.foreach(Isabelle_System.copy_file(_, doc_dir))
       doc.isabelletags.write(doc_dir)
@@ -275,22 +271,12 @@ object Document_Build
       val root_name1 = "root_" + doc.name
       val root_name = if ((doc_dir + Path.explode(root_name1).tex).is_file) root_name1 else "root"
 
-      for (name <- document_preprocessor) {
-        def message(s: String): String = s + " for document_preprocessor=" + quote(name)
-        val path = doc_dir + Path.explode(name)
-        if (path.is_file) {
-          try { Isabelle_System.bash(File.bash_path(path), cwd = doc_dir.file).check }
-          catch { case ERROR(msg) => cat_error(msg, message("The error(s) above occurred")) }
-        }
-        else error(message("Missing executable"))
-      }
-
       val digests1 = List(doc.print, document_logo.toString, document_build).map(SHA1.digest)
       val digests2 = File.find_files(doc_dir.file, follow_links = true).map(SHA1.digest)
       val sources = SHA1.digest_set(digests1 ::: digests2)
 
 
-      /* derived material (without SHA1 digest) */
+      /* derived material: without SHA1 digest */
 
       isabelle_logo.foreach(_.write(doc_dir))
 
