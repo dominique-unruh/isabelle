@@ -1,0 +1,16 @@
+#!/bin/bash
+
+set -ex
+
+cd ~/r/isabelle
+
+git checkout master
+
+git pull --ff-only upstream master
+
+git push
+
+Admin/init
+
+bin/isabelle build -b -v HOL-Analysis Lots-Of-Stuff Complex_Bounded_Operators Registers
+
